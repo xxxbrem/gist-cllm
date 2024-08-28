@@ -45,13 +45,13 @@ IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 @dataclass
 class ModelArguments:
     target_model_path: Optional[str] = field(
-        default="models/vicuna-7b-v1.5",  metadata={"help": "Path to target model"})
+        default="models/TinyLlama_v1.1_math_code",  metadata={"help": "Path to target model"})
     qlora: Optional[bool] = field(default=False, metadata={"help": "Enable QLoRA processing"})
 
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default=None, metadata={"help": "Path to the training data."}
+        default="data/collected_jacobi_trajectory/cleaned_l_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024.json", metadata={"help": "Path to the training data."}
     )
     lazy_preprocess: bool = False
 
@@ -77,6 +77,17 @@ class TrainingArguments(transformers.TrainingArguments):
         metadata={
             'help': 'The list of integrations to report the results and logs to.'
         }
+    )
+    output_dir: str = field(
+        default="out"
+    )
+    gist_token: int = None
+    num_gist_token: int = field(
+        default=2
+    )
+    attention_mask_gist: torch.tensor = None
+    per_device_train_batch_size: int = field(
+        default=1
     )
 
 def rank0_print(local_rank, *args):
@@ -189,7 +200,7 @@ def make_jacobian_data_module(
     local_rank: int,
 ) -> Dict:
     """Make dataset and collator for consistency training."""
-    assert data_args.lazy_preprocess, "only support lazy process"
+    # assert data_args.lazy_preprocess, "only support lazy process"
     dataset_cls = JacobianDataset
     rank0_print("Loading data...")
 
@@ -213,7 +224,8 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    local_rank = int(os.environ["LOCAL_RANK"])
+    # local_rank = int(os.environ["LOCAL_RANK"])
+    local_rank = 0
     training_args.local_rank = local_rank
     training_args.qlora = model_args.qlora
     
@@ -289,10 +301,34 @@ def train():
 
     # Load data
     data_module = make_jacobian_data_module(tokenizer=tokenizer,
-                                              trajectory_path=data_args.data_path,
-                                              data_args=data_args,
-                                              model=model_args.target_model_path,
-                                              local_rank=training_args.local_rank)
+                                            trajectory_path=data_args.data_path,
+                                            data_args=data_args,
+                                            model=model_args.target_model_path,
+                                            local_rank=training_args.local_rank,
+                                            )
+
+    # Initialize gist token
+    # Warning: the new embedding dimension will be 32001. This might induce some performance reduction as *Tensor Cores* will not be available. 
+    tokenizer.add_special_tokens({"additional_special_tokens": ["<GIST>"]})
+    model.resize_token_embeddings(len(tokenizer))
+    # Set new word embedding to average of existing word embeddings. For why,
+    # see https://nlp.stanford.edu/~johnhew/vocab-expansion.html
+    with torch.no_grad():
+        model.model.embed_tokens.weight[
+            -1
+        ] = model.model.embed_tokens.weight[:-1].mean(0)
+        model.lm_head.weight[-1] = model.lm_head.weight[:-1].mean(0)
+    training_args.gist_token = tokenizer.additional_special_tokens_ids[-1]
+    
+    # get gist mask
+    max_new_tokens = training_args.max_new_tokens
+    mask_width = max_new_tokens*2 + training_args.num_gist_token
+    attention_mask_gist = torch.zeros([1, 1, mask_width, mask_width], device=model.device)
+    attention_mask_gist[:, :, :max_new_tokens, :max_new_tokens] = 1
+    attention_mask_gist[:, :, -max_new_tokens:, -max_new_tokens:] = 1
+    attention_mask_gist[:, :, max_new_tokens:max_new_tokens+training_args.num_gist_token, :] = 1
+    attention_mask_gist[:, :, :, max_new_tokens:max_new_tokens+training_args.num_gist_token] = 1
+    training_args.attention_mask_gist = attention_mask_gist
 
     trainer = CllmTrainer(
         model=model, tokenizer=tokenizer, args=training_args, **data_module

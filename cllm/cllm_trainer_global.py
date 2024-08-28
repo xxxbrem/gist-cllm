@@ -5,6 +5,8 @@ from transformers.trainer_pt_utils import LabelSmoother
 import wandb
 import random
 from torch.utils.data import DataLoader
+from utils import _prepare_decoder_attention_mask
+from torch.nn import CrossEntropyLoss
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
@@ -96,14 +98,67 @@ class CllmTrainer(Trainer):
         with self.accelerator.accumulate(model):
             self.accelerator.backward(loss_global)
         
+        ### compute Gist loss ###
+        # line_break_id = self.tokenizer.encode("\n")[-1]
+        # batch size = 1
+        attention_mask = None
+        batch_size = 0
+        right_answer = jacobian_trajectory[-1]
+        loss_gist = None
+        if self.args.num_gist_token > 0:
+            gist_token = self.args.gist_token
+            attention_mask_gist = self.args.attention_mask_gist
+            
+            trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
+            line_break_id = self.tokenizer.encode("\n")[-1]
+            _, line_break_id_index = torch.where(right_answer == line_break_id)
+            assert line_break_id_index[1] + 3 == line_break_id_index[2]
+            
+            start = line_break_id_index[2]
+            seq_length = len(right_answer[batch_size])
+            for i in range(start, seq_length - max_new_tokens, max_new_tokens):
+                # insert gist tokens
+                adjacent_seq = torch.cat((right_answer[:, start:start+max_new_tokens], \
+                    torch.full_like(right_answer, gist_token, device=right_answer.device)[:, :self.args.num_gist_token], \
+                    right_answer[:, start+max_new_tokens:start+2*max_new_tokens] \
+                    if start+2*max_new_tokens <= seq_length \
+                    else torch.nn.functional.pad(right_answer[:, start+max_new_tokens:], (0, max_new_tokens+start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
+                    ), dim=1)
+                # predict
+                input_ids = torch.cat((right_answer[:, :start], adjacent_seq), dim=1)
+                inputs_embeds =model.get_input_embeddings()(input_ids)
+                #   past_key_values_length ?
+                attention_mask = self.get_attention_mask(attention_mask, inputs_embeds, attention_mask_gist, 0)
+                logits_i = self.get_logits(model, input_ids.clone().detach(), attention_mask)
+                # loss
+                input_ids[:, :start] = -100
+                # Shift so that tokens < n predict n
+                shift_logits = logits_i[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
+                # Flatten the tokens
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(
+                    shift_logits.view(-1, self.config.vocab_size), shift_labels.view(-1)
+                )
+                loss_gist += loss.detach
+        
+        if self.args.qlora:
+            loss_gist.requires_grad = True
+        print(f'loss gist: {loss_gist} computed! performing backward pass...')
+        with self.accelerator.accumulate(model):
+            self.accelerator.backward(loss_gist)
+        
+        
         if self.args.local_rank == 0:
             wandb.log({"ar loss": loss_ar})
             wandb.log({"consistency loss": loss_global})
+            wandb.log({"gist loss": loss_gist})
 
+            
         # sync processes
-        torch.distributed.barrier()
+        # torch.distributed.barrier()
         # total loss = ar_loss + consistency_global_loss
-        loss = loss_ar.detach() + loss_global.detach()
+        loss = loss_ar.detach() + loss_global.detach() + loss_gist.detach
 
         return loss
     
@@ -124,6 +179,7 @@ class CllmTrainer(Trainer):
             "shuffle": shuffle,
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,
+            # "collate_fn": lambda x: x
         }
 
         return self.accelerator.prepare(DataLoader(self.train_dataset, **dataloader_params))
@@ -147,3 +203,26 @@ class CllmTrainer(Trainer):
             attention_mask=attention_mask,
         ).logits
 
+    def get_attention_mask(self, attention_mask, inputs_embeds, attention_mask_gist, past_key_values_length):
+        batch_size, seq_length, _ = inputs_embeds.shape
+        seq_length_with_past = seq_length
+        if attention_mask is None:
+            attention_mask = torch.ones(
+                (batch_size, seq_length_with_past),
+                dtype=torch.bool,
+                device=inputs_embeds.device,
+            )
+        attention_mask = _prepare_decoder_attention_mask(
+            attention_mask,
+            (batch_size, seq_length),
+            inputs_embeds,
+            past_key_values_length
+        )
+
+        attention_mask_gist_float = torch.full_like(
+            attention_mask, torch.tensor(torch.finfo(attention_mask.dtype).min)
+        )
+        attention_mask_gist_float = attention_mask_gist_float.masked_fill(
+            attention_mask_gist.bool(), 0.0
+        )
+        return attention_mask + attention_mask_gist_float
