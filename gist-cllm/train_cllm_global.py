@@ -41,11 +41,12 @@ logger = logging.getLogger(__name__)
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
+from gist_llama import GistLlamaForCausalLM
 
 @dataclass
 class ModelArguments:
     target_model_path: Optional[str] = field(
-        default="models/TinyLlama_v1.1_math_code",  metadata={"help": "Path to target model"})
+        default="models/Abel-7B-001",  metadata={"help": "Path to target model"})
     qlora: Optional[bool] = field(default=False, metadata={"help": "Enable QLoRA processing"})
 
 @dataclass
@@ -269,13 +270,14 @@ def train():
     config.use_cache = False
     
     # Load model and tokenizer
-    model = transformers.AutoModelForCausalLM.from_pretrained(
+    model = GistLlamaForCausalLM.from_pretrained(
         model_args.target_model_path,
         config=config,
         cache_dir=training_args.cache_dir,
-        attn_implementation='flash_attention_2',
+        # attn_implementation='flash_attention_2',
         device_map='cuda',
         torch_dtype=torch.bfloat16,
+        ignore_mismatched_sizes=True
     )
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
