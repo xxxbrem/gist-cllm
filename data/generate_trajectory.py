@@ -23,7 +23,7 @@ from pathlib import Path
 path_root = Path(__file__).parents[1]
 sys.path.append(str(path_root))
 
-from cllm.utils import jacobian_generated_data_postprocessed
+from gist_cllm.utils import jacobian_generated_data_postprocessed
 
 IGNORE_INDEX = -100
 EOT_TOKEN = "<|EOT|>"
@@ -330,7 +330,7 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
     print('Jacobi trajectory has been collected. Now delete low-quality generation as post processing.')
     save_path = 'data/collected_jacobi_trajectory/'    
     cleaned_data = jacobian_generated_data_postprocessed(new_data, model_path)
-    new_file_name = "cleaned_" + f"{filename.lower().strip('/')[-1]}_jacobi_max_new_tokens{max_new_tokens}_aug{use_aug}_labels_{use_labels}_max_seq_len_{max_new_seq_len}.json"
+    new_file_name = "cleaned_" + f"{filename.lower().split('/')[-1]}_jacobi_max_new_tokens{max_new_tokens}_aug{use_aug}_labels_{use_labels}_max_seq_len_{max_new_seq_len}.json"
     new_file_path = os.path.join(save_path, new_file_name)
     
     # create directory for a path if it doesn't exist
@@ -349,7 +349,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str,
                         # default="models/vicuna-7b-v1.5")
                         default="/workspace/minghang/gist-cllm/models/TinyLlama_v1.1_math_code")
-    parser.add_argument("--data_size", default=20)
+    parser.add_argument("--data_size", default=20000)
     parser.add_argument("--use_aug", default=True)
     parser.add_argument("--use_labels", default=True)
     args = parser.parse_args()
