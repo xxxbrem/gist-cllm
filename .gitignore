@@ -1,5 +1,5 @@
 models
 data/collected_jacobi_trajectory
-cllm/__pycache__
+gist_cllm/__pycache__
 .vscode
 wandb/
