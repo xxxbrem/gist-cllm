@@ -36,6 +36,8 @@ from cllm_trainer_global import CllmTrainer
 
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 
+import wandb
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -225,10 +227,12 @@ def train():
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-    # local_rank = int(os.environ["LOCAL_RANK"])
-    local_rank = 0
+    local_rank = int(os.environ["LOCAL_RANK"])
     training_args.local_rank = local_rank
     training_args.qlora = model_args.qlora
+
+    if local_rank == 0:
+        wandb.init(os.environ["WANDB_PROJECT"])
     
     torch.set_default_dtype(torch.float)
 
@@ -280,6 +284,8 @@ def train():
         ignore_mismatched_sizes=True
     )
 
+    print(model)
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.target_model_path,
         padding_side="right",
@@ -316,6 +322,7 @@ def train():
     # Set new word embedding to average of existing word embeddings. For why,
     # see https://nlp.stanford.edu/~johnhew/vocab-expansion.html
     with torch.no_grad():
+        # distributed GistLlamaForCausalLM --> GistLlamaForCausalLM --> GistLlamaModel
         model.model.embed_tokens.weight[
             -1
         ] = model.model.embed_tokens.weight[:-1].mean(0)

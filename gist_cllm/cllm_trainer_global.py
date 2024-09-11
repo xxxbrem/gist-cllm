@@ -120,7 +120,7 @@ class CllmTrainer(Trainer):
             attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
             attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
             
-            assert seq_length - max_new_tokens*2 > start
+            assert seq_length - max_new_tokens * 2 > start
             i = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
             
             # for i in range(start, seq_length - max_new_tokens, max_new_tokens):
