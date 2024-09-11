@@ -107,12 +107,12 @@ class CllmTrainer(Trainer):
         loss_gist = None
         if self.args.num_gist_token > 0:
             gist_token = self.args.gist_token
-            trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
-            line_break_id = self.tokenizer.encode("\n")[-1]
-            _, line_break_id_index = torch.where(right_answer == line_break_id)
-            assert line_break_id_index[1] + 3 == line_break_id_index[2]
+            # trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
+            # line_break_id = self.tokenizer.encode("\n")[-1]
+            # _, line_break_id_index = torch.where(right_answer == line_break_id)
+            # assert line_break_id_index[1] + 3 == line_break_id_index[2]
             
-            start = line_break_id_index[2]
+            start = len(jacobian_trajectory[-1][0]) - max_new_tokens*2
             seq_length = len(right_answer[batch_size])
             
             attention_mask_gist = self.args.attention_mask_gist
@@ -120,8 +120,11 @@ class CllmTrainer(Trainer):
             attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
             attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
             
-            assert seq_length - max_new_tokens*2 > start
-            i = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
+            # assert seq_length - max_new_tokens*2 > start
+            # i = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
+            
+            # no random
+            
             
             # for i in range(start, seq_length - max_new_tokens, max_new_tokens):
                 # insert gist tokens
