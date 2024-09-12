@@ -109,6 +109,7 @@ def preprocess_distill_data(
     answer_trajectory_ids,
     teacher_output_ids,
     complete_teacher_output_ids,
+    prompt_ids_len,
     tokenizer: transformers.PreTrainedTokenizer,
     model: str,
     labels_ids=None,
@@ -120,6 +121,7 @@ def preprocess_distill_data(
     jacobian_prompt_ids = torch.tensor(prompt_ids[0], dtype=torch.int64)
     teacher_output_ids = torch.tensor(teacher_output_ids[0], dtype=torch.int64)
     complete_teacher_output_ids = torch.tensor(complete_teacher_output_ids, dtype=torch.int64)
+    prompt_ids_len = torch.tensor(prompt_ids_len, dtype=torch.int64)
     for answer_ids in answer_trajectory_ids:
         answer_ids = torch.tensor(answer_ids, dtype=torch.int64)
         #print(answer_ids)
@@ -139,14 +141,16 @@ def preprocess_distill_data(
             attention_mask=jacobian_trajectory_ids[0].ne(tokenizer.pad_token_id),
             labels_ids=labels_ids,
             teacher_output_ids=teacher_output_ids,
-            complete_teacher_output_ids=complete_teacher_output_ids
+            complete_teacher_output_ids=complete_teacher_output_ids,
+            prompt_id_len=prompt_ids_len[0]
         )
     else:
         return dict(
             jacobian_trajectory=jacobian_trajectory_ids,
             attention_mask=jacobian_trajectory_ids[0].ne(tokenizer.pad_token_id),
             teacher_output_ids=teacher_output_ids,
-            complete_teacher_output_ids=complete_teacher_output_ids
+            complete_teacher_output_ids=complete_teacher_output_ids,
+            prompt_id_len=prompt_ids_len[0]
         )
     
 class JacobianDataset(Dataset):
@@ -178,6 +182,7 @@ class JacobianDataset(Dataset):
                          self.raw_data[i]["answer_trajectory_ids"],
                          self.raw_data[i]["teacher_output_ids"],
                          self.raw_data[i]["complete_teacher_output_ids"],
+                         self.raw_data[i]['prompt_ids_len'],
                          self.tokenizer,
                          self.model,
                          labels_ids=self.raw_data[i]["labels_ids"])
@@ -186,6 +191,7 @@ class JacobianDataset(Dataset):
                          self.raw_data[i]["answer_trajectory_ids"],
                          self.raw_data[i]["teacher_output_ids"],
                          self.raw_data[i]["complete_teacher_output_ids"],
+                         self.raw_data[i]['prompt_ids_len'],
                          self.tokenizer,
                          self.model)
         self.cached_data_dict[i] = ret

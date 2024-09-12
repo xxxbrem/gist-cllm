@@ -28,6 +28,7 @@ class CllmTrainer(Trainer):
 
         jacobian_trajectory = inputs["jacobian_trajectory"]
         input_masks = inputs["attention_mask"]
+        prompt_id_len = inputs["prompt_id_len"]
         bsz = jacobian_trajectory[0].shape[0]
         eos_reached = torch.tensor([False] * bsz).to(model.device)
 
@@ -112,7 +113,8 @@ class CllmTrainer(Trainer):
             # _, line_break_id_index = torch.where(right_answer == line_break_id)
             # assert line_break_id_index[1] + 3 == line_break_id_index[2]
             
-            start = len(jacobian_trajectory[-1][0]) - max_new_tokens*2
+            # start = len(jacobian_trajectory[-1][0]) - max_new_tokens
+            start = prompt_id_len[0]
             seq_length = len(right_answer[batch_size])
             
             attention_mask_gist = self.args.attention_mask_gist
@@ -121,27 +123,27 @@ class CllmTrainer(Trainer):
             attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
             
             # assert seq_length - max_new_tokens*2 > start
-            # i = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
+            random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
             
             # no random
             
             
             # for i in range(start, seq_length - max_new_tokens, max_new_tokens):
                 # insert gist tokens
-            adjacent_seq = torch.cat((right_answer[:, start:start+max_new_tokens], \
+            adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
                 torch.full_like(right_answer, gist_token, device=right_answer.device)[:, :self.args.num_gist_token], \
-                right_answer[:, start+max_new_tokens:start+2*max_new_tokens] \
-                if start+2*max_new_tokens <= seq_length \
-                else torch.nn.functional.pad(right_answer[:, start+max_new_tokens:], (0, max_new_tokens+start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
+                right_answer[:, random_start+max_new_tokens:random_start+2*max_new_tokens] \
+                if random_start+2*max_new_tokens <= seq_length \
+                else torch.nn.functional.pad(right_answer[:, random_start+max_new_tokens:], (0, max_new_tokens+random_start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
                 ), dim=1)
             # predict
-            input_ids = torch.cat((right_answer[:, :start], adjacent_seq), dim=1)
+            input_ids = torch.cat((right_answer[:, :random_start], adjacent_seq), dim=1)
             # inputs_embeds = model.get_input_embeddings()(input_ids)
             #   past_key_values_length ?
             # attention_mask = self.get_attention_mask(attention_mask, inputs_embeds, attention_mask_gist_full, 0)
             logits_i = self.get_logits(model, input_ids.clone().detach(), attention_mask, attention_mask_gist_full)
             # loss
-            input_ids[:, :start] = -100
+            input_ids[:, :random_start] = -100
             # Shift so that tokens < n predict n
             shift_logits = logits_i[..., :-1, :].contiguous()
             shift_labels = input_ids[..., 1:].contiguous()
