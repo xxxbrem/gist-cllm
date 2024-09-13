@@ -108,7 +108,9 @@ class CllmTrainer(Trainer):
         start = prompt_id_len[0]
         seq_length = len(right_answer[batch_size])
             
-        if self.args.num_gist_token > 0 and start <= seq_length - max_new_tokens*2:
+        if self.args.num_gist_token > 0:
+            assert start <= seq_length - max_new_tokens*2
+            
             gist_token = self.args.gist_token
             # trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
             # line_break_id = self.tokenizer.encode("\n")[-1]
@@ -124,7 +126,7 @@ class CllmTrainer(Trainer):
             attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
             
             # assert seq_length - max_new_tokens*2 >= start
-            random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
+            random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens)) if start < seq_length - max_new_tokens*2 else start
             
             # insert gist tokens
             adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
@@ -176,16 +178,7 @@ class CllmTrainer(Trainer):
             # sync processes
             # torch.distributed.barrier()
             # total loss = ar_loss + consistency_global_loss
-            loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach() 
-        else:
-            if self.args.local_rank == 0:
-                wandb.log({"ar loss": loss_ar})
-                wandb.log({"consistency loss": loss_consistency})
- 
-            # sync processes
-            # torch.distributed.barrier()
-            # total loss = ar_loss + consistency_global_loss
-            loss = loss_ar.detach() + loss_consistency.detach()         
+            loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach()        
 
         return loss
     
@@ -200,7 +193,7 @@ class CllmTrainer(Trainer):
 
     def get_train_dataloader(self):
         # Create custom DataLoader with shuffle set to False
-        shuffle = True
+        shuffle = False
         dataloader_params = {
             "batch_size": self.args.per_device_train_batch_size,
             "shuffle": shuffle,
