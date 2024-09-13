@@ -100,13 +100,15 @@ class CllmTrainer(Trainer):
             self.accelerator.backward(loss_consistency)
         
         ### compute Gist loss ###
-        # line_break_id = self.tokenizer.encode("\n")[-1]
         # batch size = 1
         attention_mask = None
         batch_size = 0
         right_answer = jacobian_trajectory[-1]
         loss_gist = None
-        if self.args.num_gist_token > 0:
+        start = prompt_id_len[0]
+        seq_length = len(right_answer[batch_size])
+            
+        if self.args.num_gist_token > 0 and start <= seq_length - max_new_tokens*2:
             gist_token = self.args.gist_token
             # trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
             # line_break_id = self.tokenizer.encode("\n")[-1]
@@ -114,28 +116,30 @@ class CllmTrainer(Trainer):
             # assert line_break_id_index[1] + 3 == line_break_id_index[2]
             
             # start = len(jacobian_trajectory[-1][0]) - max_new_tokens
-            start = prompt_id_len[0]
-            seq_length = len(right_answer[batch_size])
             
             attention_mask_gist = self.args.attention_mask_gist
             full_len = start + max_new_tokens*2 + self.args.num_gist_token
+        
             attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
             attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
             
-            # assert seq_length - max_new_tokens*2 > start
+            # assert seq_length - max_new_tokens*2 >= start
             random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens))
             
-            # no random
-            
-            
-            # for i in range(start, seq_length - max_new_tokens, max_new_tokens):
-                # insert gist tokens
+            # insert gist tokens
             adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
                 torch.full_like(right_answer, gist_token, device=right_answer.device)[:, :self.args.num_gist_token], \
                 right_answer[:, random_start+max_new_tokens:random_start+2*max_new_tokens] \
                 if random_start+2*max_new_tokens <= seq_length \
                 else torch.nn.functional.pad(right_answer[:, random_start+max_new_tokens:], (0, max_new_tokens+random_start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
                 ), dim=1)
+
+            #     assert start == seq_length - max_new_tokens
+            #     full_len = start + max_new_tokens + self.args.num_gist_token
+            #     attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
+            #     attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
+                
+            #     random_start = start
             # predict
             input_ids = torch.cat((right_answer[:, :random_start], adjacent_seq), dim=1)
             # inputs_embeds = model.get_input_embeddings()(input_ids)
@@ -156,23 +160,32 @@ class CllmTrainer(Trainer):
                 # accumulated loss
                 # loss_gist += loss.detach
         
-        if self.args.qlora:
-            loss_gist.requires_grad = True
-        print(f'loss gist: {loss_gist} computed! performing backward pass...')
-        with self.accelerator.accumulate(model):
-            self.accelerator.backward(loss_gist)
-        
-        
-        if self.args.local_rank == 0:
-            wandb.log({"ar loss": loss_ar})
-            wandb.log({"consistency loss": loss_consistency})
-            wandb.log({"gist loss": loss_gist})
+            if self.args.qlora:
+                loss_gist.requires_grad = True
+            print(f'loss gist: {loss_gist} computed! performing backward pass...')
+            with self.accelerator.accumulate(model):
+                self.accelerator.backward(loss_gist)
+                
+                
+            if self.args.local_rank == 0:
+                wandb.log({"ar loss": loss_ar})
+                wandb.log({"consistency loss": loss_consistency})
+                wandb.log({"gist loss": loss_gist})
 
-            
-        # sync processes
-        # torch.distributed.barrier()
-        # total loss = ar_loss + consistency_global_loss
-        loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach()
+                
+            # sync processes
+            # torch.distributed.barrier()
+            # total loss = ar_loss + consistency_global_loss
+            loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach() 
+        else:
+            if self.args.local_rank == 0:
+                wandb.log({"ar loss": loss_ar})
+                wandb.log({"consistency loss": loss_consistency})
+ 
+            # sync processes
+            # torch.distributed.barrier()
+            # total loss = ar_loss + consistency_global_loss
+            loss = loss_ar.detach() + loss_consistency.detach()         
 
         return loss
     
@@ -217,27 +230,3 @@ class CllmTrainer(Trainer):
             attention_mask=attention_mask,
             attention_mask_gist = attention_mask_gist_full
         ).logits
-
-    # def get_attention_mask(self, attention_mask, inputs_embeds, attention_mask_gist, past_key_values_length):
-    #     batch_size, seq_length, _ = inputs_embeds.shape
-    #     seq_length_with_past = seq_length
-    #     if attention_mask is None:
-    #         attention_mask = torch.ones(
-    #             (batch_size, seq_length_with_past),
-    #             dtype=torch.bool,
-    #             device=inputs_embeds.device,
-    #         )
-    #     attention_mask = _prepare_decoder_attention_mask(
-    #         attention_mask,
-    #         (batch_size, seq_length),
-    #         inputs_embeds,
-    #         past_key_values_length
-    #     )
-
-    #     attention_mask_gist_float = torch.full_like(
-    #         attention_mask, torch.tensor(torch.finfo(attention_mask.dtype).min)
-    #     )
-    #     attention_mask_gist_float = attention_mask_gist_float.masked_fill(
-    #         attention_mask_gist.bool(), 0.0
-    #     )
-    #     return attention_mask + attention_mask_gist_float
