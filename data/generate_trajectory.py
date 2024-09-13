@@ -343,12 +343,12 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", type=str,
-                        default="/workspace/minghang/Consistency_LLM/data/raw_data/gsm8k_train.jsonl")
+                        default="data/raw_data/gsm8k_train.jsonl")
     parser.add_argument("--max_new_tokens", type=int, default=16)
     parser.add_argument("--max_new_seq_len", type=int, default=512)
     parser.add_argument("--model", type=str,
                         # default="models/vicuna-7b-v1.5")
-                        default="/workspace/minghang/gist-cllm/models/TinyLlama_v1.1_math_code")
+                        default="models/TinyLlama_v1.1_math_code")
     parser.add_argument("--data_size", default=20000)
     parser.add_argument("--use_aug", default=True)
     parser.add_argument("--use_labels", default=True)
