@@ -118,15 +118,14 @@ class CllmTrainer(Trainer):
             # assert line_break_id_index[1] + 3 == line_break_id_index[2]
             
             # start = len(jacobian_trajectory[-1][0]) - max_new_tokens
-            
-            attention_mask_gist = self.args.attention_mask_gist
-            full_len = start + max_new_tokens*2 + self.args.num_gist_token
-        
-            attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
-            attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
-            
             # assert seq_length - max_new_tokens*2 >= start
             random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens)) if start < seq_length - max_new_tokens*2 else start
+            
+            attention_mask_gist = self.args.attention_mask_gist
+            full_len = random_start + max_new_tokens*2 + self.args.num_gist_token
+        
+            attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
+            attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist                 
             
             # insert gist tokens
             adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
@@ -193,7 +192,7 @@ class CllmTrainer(Trainer):
 
     def get_train_dataloader(self):
         # Create custom DataLoader with shuffle set to False
-        shuffle = False
+        shuffle = True
         dataloader_params = {
             "batch_size": self.args.per_device_train_batch_size,
             "shuffle": shuffle,
