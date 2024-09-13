@@ -52,7 +52,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default="data/collected_jacobi_trajectory/cleaned_Abel-7B-001_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024.json", metadata={"help": "Path to the training data."}
+        default="data/collected_jacobi_trajectory/cleaned_Abel-7B-001_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024_clear_itr_0.json", metadata={"help": "Path to the training data."}
     )
     lazy_preprocess: bool = False
 
