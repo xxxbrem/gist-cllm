@@ -122,7 +122,7 @@ class CllmTrainer(Trainer):
             random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens)) if start < seq_length - max_new_tokens*2 else start
             
             attention_mask_gist = self.args.attention_mask_gist
-            full_len = random_start + max_new_tokens*2 + self.args.num_gist_token
+            full_len = start + max_new_tokens*2 + self.args.num_gist_token
         
             attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
             attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist                 
@@ -142,7 +142,7 @@ class CllmTrainer(Trainer):
                 
             #     random_start = start
             # predict
-            input_ids = torch.cat((right_answer[:, :random_start], adjacent_seq), dim=1)
+            input_ids = torch.cat((right_answer[:, :start], adjacent_seq), dim=1)
             # inputs_embeds = model.get_input_embeddings()(input_ids)
             #   past_key_values_length ?
             # attention_mask = self.get_attention_mask(attention_mask, inputs_embeds, attention_mask_gist_full, 0)
