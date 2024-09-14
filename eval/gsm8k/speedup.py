@@ -31,8 +31,9 @@ from pathlib import Path
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
 
-from cllm.utils import detect_repetitive_patterns
-from cllm.cllm_llama_modeling import delete_false_key_value, jacobi_forward_profiling
+from gist_cllm.utils import detect_repetitive_patterns
+from gist_cllm.cllm_llama_modeling import delete_false_key_value, jacobi_forward_profiling, gist_jacobi_forward
+from gist_cllm.gist_llama import GistLlamaForCausalLM
 
 DynamicCache.delete_false_key_value = delete_false_key_value
 LlamaForCausalLM.jacobi_forward = jacobi_forward_profiling
@@ -315,12 +316,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", type=str,
                         default="eval/gsm8k/test.jsonl")
-    parser.add_argument("--max_new_tokens", type=int, default=16)
-    parser.add_argument("--max_new_seq_len", type=int, default=1024)
+    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--max_new_seq_len", type=int, default=512)
     parser.add_argument("--test_model_path", type=str,
-                        default="models/vicuna-7b-sharegpt-gpt4-48k")
+                        default="models/Gist_CLLM_Abel_7B_001")
     parser.add_argument("--teacher_model_path", type=str,
-                        default="cllm/consistency-llm-7b-sharegpt48k")
+                        default="models/Gist_CLLM_Abel_7B_001")
     parser.add_argument("--data_size", type=str,
                         default=500)
     args = parser.parse_args() 

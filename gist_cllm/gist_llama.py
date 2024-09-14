@@ -18,12 +18,12 @@ from transformers.models.llama.modeling_llama import (
     LlamaDecoderLayer,
     LlamaMLP,
     LlamaRMSNorm,
-    apply_rotary_pos_emb,
+    # apply_rotary_pos_emb,
 )
 from transformers.utils import logging
 
-from generation_utils import GistGenerationMixin
-from gist_caching import GistActivations
+from gist_cllm.generation_utils import GistGenerationMixin
+from gist_cllm.gist_caching import GistActivations
 
 logger = logging.get_logger(__name__)
 
@@ -203,9 +203,22 @@ class GistLlamaAttention(LlamaAttention):
         cos, sin = self.rotary_emb(
             value_states, seq_len=kv_seq_len, gist_offset=gist_offset
         )
-        # offset?
+        # offset or position_ids?
+        def rotate_half(x):
+            """Rotates half the hidden dims of the input."""
+            x1 = x[..., : x.shape[-1] // 2]
+            x2 = x[..., x.shape[-1] // 2 :]
+            return torch.cat((-x2, x1), dim=-1)
+
+
+        def apply_rotary_pos_emb(q, k, cos, sin, offset: int = 0):
+            cos = cos[..., offset : q.shape[-2] + offset, :]
+            sin = sin[..., offset : q.shape[-2] + offset, :]
+            q_embed = (q * cos) + (rotate_half(q) * sin)
+            k_embed = (k * cos) + (rotate_half(k) * sin)
+            return q_embed, k_embed
         query_states, key_states = apply_rotary_pos_emb(
-            query_states, key_states, cos, sin, position_ids=offset
+            query_states, key_states, cos, sin, offset=offset
         )
 
         if past_key_value is not None:
@@ -621,7 +634,7 @@ class GistLlamaModel(LlamaPreTrainedModel):
         )
 
 
-class GistLlamaForCausalLM(LlamaPreTrainedModel, GistGenerationMixin):
+class GistLlamaForCausalLM(LlamaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
 
     def __init__(self, config):

@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 import torch
 from transformers.modeling_outputs import ModelOutput
 
-from gist import get_gist_index
+from gist_cllm.gist import get_gist_index
 
 
 @dataclass
