@@ -32,7 +32,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from typing import Dict
 
-from cllm_trainer_global import CllmTrainer
+from gist_cllm.cllm_trainer_global import CllmTrainer
 
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
-from gist_llama import GistLlamaForCausalLM
+from gist_cllm.gist_llama import GistLlamaForCausalLM
 
 @dataclass
 class ModelArguments:
