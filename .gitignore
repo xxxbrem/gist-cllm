@@ -5,3 +5,4 @@ gist_cllm/__pycache__/
 wandb/
 eval/gsm8k/__pycache__
 data/speedup_profiling_results
+tmp.md

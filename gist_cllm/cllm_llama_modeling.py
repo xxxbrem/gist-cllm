@@ -24,6 +24,7 @@ from transformers.modeling_attn_mask_utils import (
 import torch.nn.functional as F
 from transformers import LlamaModel,LlamaForCausalLM
 import argparse
+from gist_cllm.utils import _prepare_decoder_attention_mask, make_gist_mask
 
 def delete_false_key_value(
         self,
@@ -416,6 +417,7 @@ def jacobi_forward_profiling(
 @torch.inference_mode()
 def gist_jacobi_forward(
     self,
+    tokenizer,
     input_ids: torch.LongTensor = None,
     attention_mask: Optional[torch.Tensor] = None,
     position_ids: Optional[torch.LongTensor] = None,
@@ -423,6 +425,9 @@ def gist_jacobi_forward(
     use_cache: Optional[bool] = None,
     max_new_tokens: Optional[int] = None,
     prefill_phase: Optional[bool] = False,
+    max_new_tokens_unit: Optional[int] = None,
+    num_gist_tokens: Optional[int] = None,
+    gist_token_id: Optional[int] = None
 ):
     
     assert use_cache == True
@@ -499,13 +504,37 @@ def gist_jacobi_forward(
         first_correct_token = predict_next_tokens[:, -1]
         return next_decoder_cache, first_correct_token
     else: # generation phase, input as random_initilized point and output as fixed point
+        
         jacobian_trajectory = []
         accurate_n_gram = torch.zeros_like(input_ids).to(input_ids.device)
         accurate_length = 0
-        next_point = input_ids
-        jacobian_trajectory.append(next_point)
+        # next_point = input_ids
+        jacobian_trajectory.append(input_ids)
+        if num_gist_tokens > 0:
+            gist_token_id = tokenizer.encode('<GIST>')[-1]
+            # insert gist tokens
+            gist_tokens = torch.tensor(gist_token_id, device=input_ids.device).repeat(num_gist_tokens).unsqueeze(0)
+            input_ids_new = []
+            for i in range(0, input_ids.shape[-1]-max_new_tokens_unit, max_new_tokens_unit):
+                input_ids_new.append(input_ids[:, i:i+max_new_tokens_unit])
+                input_ids_new.append(gist_tokens)
+            input_ids_new.append(input_ids[:, -max_new_tokens_unit:])
+            next_point = torch.cat(input_ids_new, dim=1)
+            # gist_index = torch.where(torch.cat(input_ids_new, dim=1) == gist_token_id)[-1]
+            gist_index = []
+            i = max_new_tokens_unit
+            while i < input_ids.shape[-1]:
+                gist_index.append(i)
+                i += 1
+                gist_index.append(i)
+                i += 1
+                i += max_new_tokens_unit
+        else:
+            next_point = input_ids
 
         iter_counter = 0
+        every_unit_count = []
+        complete_unit = 0
         while True:
 
             current_point = next_point
@@ -526,7 +555,32 @@ def gist_jacobi_forward(
                 )
                 position_ids = position_ids.unsqueeze(0)
 
-            if self.model._use_flash_attention_2:
+            if num_gist_tokens > 0:
+                seq_length_with_past = seq_length
+                seq_length_with_past = seq_length_with_past + past_key_values_length
+                if attention_mask is None:
+                    attention_mask = torch.ones(
+                        (batch_size, seq_length_with_past),
+                        dtype=torch.bool,
+                        device=inputs_embeds.device,
+                    )
+                attention_mask = _prepare_decoder_attention_mask(
+                    attention_mask,
+                    (batch_size, seq_length),
+                    inputs_embeds,
+                    past_key_values_length,
+                )
+
+                attention_mask_gist_float = torch.full_like(
+                    attention_mask, torch.tensor(torch.finfo(attention_mask.dtype).min)
+                )
+                attention_mask_gist = make_gist_mask(current_point, gist_token_id, past_key_values_length)
+                if attention_mask_gist is not None:
+                    attention_mask_gist_float = attention_mask_gist_float.masked_fill(
+                        attention_mask_gist.bool(), 0.0
+                    )
+                    attention_mask = attention_mask + attention_mask_gist_float
+            elif self.model._use_flash_attention_2:
                 # 2d mask is passed through the layers
                 attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
             elif self.model._use_sdpa :
@@ -570,13 +624,34 @@ def gist_jacobi_forward(
             logits = logits.float()
             all_shift_one_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1) / 0.01, dim=-1)
             next_point= torch.cat((current_point[0, 0].view(1,-1), all_shift_one_token[0, :seq_length-1].view(1,-1)), dim=-1)
-            jacobian_trajectory.append(next_point)
-            
-            if torch.all(torch.eq(current_point, next_point)).item():    
-                #print('Successfully break!')
-                #print(next_point)
-                first_correct_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1), dim=-1)[:,-1]
-                break
+            if num_gist_tokens > 0:
+                # force gist token
+                next_point[:, gist_index] = gist_token_id
+                # remove gist token
+                mask = torch.ones_like(next_point, dtype=torch.bool, device=next_point.device)
+                if len(gist_index) > 0:
+                    mask[:, gist_index] = False
+                jacobian_trajectory.append(next_point[mask].unsqueeze(0))
+                # check unit
+                if len(gist_index) > 0:
+                    if torch.all(torch.eq(current_point[:, :gist_index[0]], next_point[:, :gist_index[0]])).item():
+                        every_unit_count.append(iter_counter)
+                        next_point = torch.cat((next_point[:, :gist_index[0]], next_point[:, gist_index[1]+1:]), dim=1)
+                        gist_index = gist_index[2:]
+                        complete_unit += 1
+                else:
+                    if torch.all(torch.eq(current_point[:, -max_new_tokens_unit:], next_point[:, -max_new_tokens_unit:])).item():
+                        every_unit_count.append(iter_counter)
+                        first_correct_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1), dim=-1)[:,-1]
+                        break
+            else: 
+                jacobian_trajectory.append(next_point)
+                
+                if torch.all(torch.eq(current_point, next_point)).item():    
+                    #print('Successfully break!')
+                    #print(next_point)
+                    first_correct_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1), dim=-1)[:,-1]
+                    break
             past_key_values.delete_false_key_value(seq_length)
 
             iter_counter += 1
