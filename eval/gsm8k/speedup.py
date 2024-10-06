@@ -33,7 +33,6 @@ sys.path.append(str(path_root))
 
 from gist_cllm.utils import detect_repetitive_patterns
 from gist_cllm.cllm_llama_modeling import delete_false_key_value, jacobi_forward_profiling, gist_jacobi_forward
-from gist_cllm.gist_llama import GistLlamaForCausalLM
 
 DynamicCache.delete_false_key_value = delete_false_key_value
 LlamaForCausalLM.jacobi_forward = gist_jacobi_forward

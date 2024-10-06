@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
-from gist_cllm.gist_llama import GistLlamaForCausalLM
+from gist_cllm.gist_llama_modeling import GistLlamaForCausalLM
 
 @dataclass
 class ModelArguments:
