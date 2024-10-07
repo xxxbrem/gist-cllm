@@ -515,20 +515,26 @@ def gist_jacobi_forward(
             # insert gist tokens
             gist_tokens = torch.tensor(gist_token_id, device=input_ids.device).repeat(num_gist_tokens).unsqueeze(0)
             input_ids_new = []
+            gist_index = []
+            index_count = 0
             for i in range(0, input_ids.shape[-1]-max_new_tokens_unit, max_new_tokens_unit):
                 input_ids_new.append(input_ids[:, i:i+max_new_tokens_unit])
+                index_count += max_new_tokens_unit
                 input_ids_new.append(gist_tokens)
+                gist_index += [j for j in range(index_count, index_count+num_gist_tokens)]
+                index_count += num_gist_tokens
             input_ids_new.append(input_ids[:, -max_new_tokens_unit:])
             next_point = torch.cat(input_ids_new, dim=1)
             # gist_index = torch.where(torch.cat(input_ids_new, dim=1) == gist_token_id)[-1]
-            gist_index = []
-            i = max_new_tokens_unit
-            while i < input_ids.shape[-1]:
-                gist_index.append(i)
-                i += 1
-                gist_index.append(i)
-                i += 1
-                i += max_new_tokens_unit
+            
+            # i = max_new_tokens_unit - 1
+            # while i < input_ids.shape[-1]:
+            #     tmp = num_gist_tokens
+            #     while tmp:
+            #         gist_index.append(i)
+            #         i += 1
+            #         tmp -= 1
+            #     i += max_new_tokens_unit
         else:
             next_point = input_ids
 
@@ -637,7 +643,7 @@ def gist_jacobi_forward(
                     if torch.all(torch.eq(current_point[:, :gist_index[0]], next_point[:, :gist_index[0]])).item():
                         every_unit_count.append(iter_counter)
                         next_point = torch.cat((next_point[:, :gist_index[0]], next_point[:, gist_index[1]+1:]), dim=1)
-                        gist_index = gist_index[2:]
+                        gist_index = gist_index[num_gist_tokens:]
                         complete_unit += 1
                 else:
                     if torch.all(torch.eq(current_point[:, -max_new_tokens_unit:], next_point[:, -max_new_tokens_unit:])).item():
