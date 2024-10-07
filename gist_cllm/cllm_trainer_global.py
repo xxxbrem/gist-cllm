@@ -177,7 +177,17 @@ class CllmTrainer(Trainer):
             # sync processes
             # torch.distributed.barrier()
             # total loss = ar_loss + consistency_global_loss
-            loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach()        
+            loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach() 
+        
+        else:   
+            if self.args.local_rank == 0:
+                wandb.log({"ar loss": loss_ar})
+                wandb.log({"consistency loss": loss_consistency})
+                
+            # sync processes
+            # torch.distributed.barrier()
+            # total loss = ar_loss + consistency_global_loss
+            loss = loss_ar.detach() + loss_consistency.detach()
 
         return loss
     

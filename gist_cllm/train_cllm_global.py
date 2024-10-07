@@ -84,7 +84,7 @@ class TrainingArguments(transformers.TrainingArguments):
     )
     gist_token: int = None
     num_gist_token: int = field(
-        default=2
+        default=0
     )
     attention_mask_gist: torch.tensor = None
     per_device_train_batch_size: int = field(
