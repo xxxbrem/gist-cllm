@@ -30,7 +30,7 @@ torchrun --nnodes=1 --nproc_per_node=4 --rdzv_id=101 --rdzv_endpoint='localhost:
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 10 \
-    --model_max_length 2048 \
+    --model_max_length 1024 \
     --lazy_preprocess True \
     --fsdp "full_shard auto_wrap" \
     --fsdp_transformer_layer_cls_to_wrap 'LlamaDecoderLayer' \
