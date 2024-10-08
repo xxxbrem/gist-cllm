@@ -47,7 +47,7 @@ class CllmTrainer(Trainer):
                 trajectory_copy[j, int(eos_pos)+1:] = self.tokenizer.pad_token_id
                 jacobian_trajectory[i] = trajectory_copy  
 
-        ### compute AutoRegression loss ###
+        ## compute AutoRegression loss ###
         # use labels to avoid pattern collapse
         if self.use_gt_labels:
             labels = inputs['labels_ids']
@@ -111,7 +111,7 @@ class CllmTrainer(Trainer):
         if self.args.num_gist_token > 0:
             assert start <= seq_length - max_new_tokens*2
             
-            gist_token = self.args.gist_token
+            gist_token = self.tokenizer.encode(f"<GIST{inputs['jacobian_itr_id'][0].split('_')[-1]}>")[-1]
             # trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
             # line_break_id = self.tokenizer.encode("\n")[-1]
             # _, line_break_id_index = torch.where(right_answer == line_break_id)
@@ -131,8 +131,8 @@ class CllmTrainer(Trainer):
             adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
                 torch.full_like(right_answer, gist_token, device=right_answer.device)[:, :self.args.num_gist_token], \
                 right_answer[:, random_start+max_new_tokens:random_start+2*max_new_tokens] \
-                if random_start+2*max_new_tokens <= seq_length \
-                else torch.nn.functional.pad(right_answer[:, random_start+max_new_tokens:], (0, max_new_tokens+random_start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
+                # if random_start+2*max_new_tokens <= seq_length \
+                # else torch.nn.functional.pad(right_answer[:, random_start+max_new_tokens:], (0, max_new_tokens+random_start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
                 ), dim=1)
 
             #     assert start == seq_length - max_new_tokens

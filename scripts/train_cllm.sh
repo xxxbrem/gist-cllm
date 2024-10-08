@@ -6,6 +6,7 @@ trajectory_file=$2
 output_path=$3
 n_token_seq_size=$4
 qlora=$5
+num_gist_token=$6
 
 torchrun --nnodes=1 --nproc_per_node=4 --rdzv_id=101 --rdzv_endpoint='localhost:5666' \
     --master_port 10000 \
@@ -33,4 +34,5 @@ torchrun --nnodes=1 --nproc_per_node=4 --rdzv_id=101 --rdzv_endpoint='localhost:
     --lazy_preprocess True \
     --fsdp "full_shard auto_wrap" \
     --fsdp_transformer_layer_cls_to_wrap 'LlamaDecoderLayer' \
-    --qlora ${qlora}
+    --qlora ${qlora} \
+    --num_gist_token ${num_gist_token}

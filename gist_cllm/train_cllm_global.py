@@ -82,13 +82,15 @@ class TrainingArguments(transformers.TrainingArguments):
     output_dir: str = field(
         default="out"
     )
-    gist_token: int = None
     num_gist_token: int = field(
         default=0
     )
     attention_mask_gist: torch.tensor = None
     per_device_train_batch_size: int = field(
         default=1
+    )
+    gist_token_kinds: int = field(
+        default=0
     )
 
 def rank0_print(local_rank, *args):
@@ -110,6 +112,7 @@ def preprocess_distill_data(
     teacher_output_ids,
     complete_teacher_output_ids,
     prompt_ids_len,
+    jacobian_itr_ids,
     tokenizer: transformers.PreTrainedTokenizer,
     model: str,
     labels_ids=None,
@@ -142,7 +145,8 @@ def preprocess_distill_data(
             labels_ids=labels_ids,
             teacher_output_ids=teacher_output_ids,
             complete_teacher_output_ids=complete_teacher_output_ids,
-            prompt_id_len=prompt_ids_len[0]
+            prompt_id_len=prompt_ids_len[0],
+            jacobian_itr_id=jacobian_itr_ids
         )
     else:
         return dict(
@@ -150,7 +154,8 @@ def preprocess_distill_data(
             attention_mask=jacobian_trajectory_ids[0].ne(tokenizer.pad_token_id),
             teacher_output_ids=teacher_output_ids,
             complete_teacher_output_ids=complete_teacher_output_ids,
-            prompt_id_len=prompt_ids_len[0]
+            prompt_id_len=prompt_ids_len[0],
+            jacobian_itr_id=jacobian_itr_ids
         )
     
 class JacobianDataset(Dataset):
@@ -179,21 +184,23 @@ class JacobianDataset(Dataset):
             return self.cached_data_dict[i]
         if 'labels_ids' in self.raw_data[i].keys():
             ret = preprocess_distill_data(self.raw_data[i]["prompt_ids"],
-                         self.raw_data[i]["answer_trajectory_ids"],
-                         self.raw_data[i]["teacher_output_ids"],
-                         self.raw_data[i]["complete_teacher_output_ids"],
-                         self.raw_data[i]['prompt_ids_len'],
-                         self.tokenizer,
-                         self.model,
-                         labels_ids=self.raw_data[i]["labels_ids"])
+                        self.raw_data[i]["answer_trajectory_ids"],
+                        self.raw_data[i]["teacher_output_ids"],
+                        self.raw_data[i]["complete_teacher_output_ids"],
+                        self.raw_data[i]['prompt_ids_len'],
+                        self.raw_data[i]['jacobian_itr_id'],
+                        self.tokenizer,
+                        self.model,
+                        labels_ids=self.raw_data[i]["labels_ids"])
         else:
             ret = preprocess_distill_data(self.raw_data[i]["prompt_ids"],
-                         self.raw_data[i]["answer_trajectory_ids"],
-                         self.raw_data[i]["teacher_output_ids"],
-                         self.raw_data[i]["complete_teacher_output_ids"],
-                         self.raw_data[i]['prompt_ids_len'],
-                         self.tokenizer,
-                         self.model)
+                        self.raw_data[i]["answer_trajectory_ids"],
+                        self.raw_data[i]["teacher_output_ids"],
+                        self.raw_data[i]["complete_teacher_output_ids"],
+                        self.raw_data[i]['prompt_ids_len'],
+                        self.raw_data[i]['jacobian_itr_id'],
+                        self.tokenizer,
+                        self.model)
         self.cached_data_dict[i] = ret
 
         return ret
@@ -317,16 +324,16 @@ def train():
 
     # Initialize gist token
     # Warning: the new embedding dimension will be 32001. This might induce some performance reduction as *Tensor Cores* will not be available. 
-    tokenizer.add_special_tokens({"additional_special_tokens": ["<GIST>"]})
+    training_args.gist_token_kinds = training_args.model_max_length // training_args.max_new_tokens - 1
+    tokenizer.add_special_tokens({"additional_special_tokens": [f"<GIST{i}>" for i in range(training_args.gist_token_kinds)]})
     model.resize_token_embeddings(len(tokenizer))
     # Set new word embedding to average of existing word embeddings. For why,
     # see https://nlp.stanford.edu/~johnhew/vocab-expansion.html
     with torch.no_grad():
         model.model.embed_tokens.weight[
-            -1
-        ] = model.model.embed_tokens.weight[:-1].mean(0)
-        model.lm_head.weight[-1] = model.lm_head.weight[:-1].mean(0)
-    training_args.gist_token = tokenizer.additional_special_tokens_ids[-1]
+            -training_args.gist_token_kinds:
+        ] = model.model.embed_tokens.weight[:-training_args.gist_token_kinds].mean(0)
+        model.lm_head.weight[-training_args.gist_token_kinds:] = model.lm_head.weight[:-training_args.gist_token_kinds].mean(0)
     
     # get gist mask
     max_new_tokens = training_args.max_new_tokens
