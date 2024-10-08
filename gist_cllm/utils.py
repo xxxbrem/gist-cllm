@@ -203,7 +203,7 @@ def make_gist_mask(inputs, gist_token_id, prompt_len=0):
                 gist_mask[rec:i, rec:i] = 1
                 gist_flag = True
             gist_mask[:, i] = 1
-            gist_mask[i, :] = 1
+            # gist_mask[i, :] = 1
             rec = i
         else:
             gist_flag = False

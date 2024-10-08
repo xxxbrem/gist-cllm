@@ -629,11 +629,24 @@ def gist_jacobi_forward(
 
             logits = logits.float()
             all_shift_one_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1) / 0.01, dim=-1)
-            next_point= torch.cat((current_point[0, 0].view(1,-1), all_shift_one_token[0, :seq_length-1].view(1,-1)), dim=-1)
+            next_point = torch.cat((current_point[0, 0].view(1,-1), all_shift_one_token[0, :seq_length-1].view(1,-1)), dim=-1)
             if num_gist_tokens > 0:
                 # force gist token
                 next_point[:, gist_index] = gist_token_id
-                # remove gist token
+                
+                # next_point = next_point[next_point != torch.tensor(gist_token_id, device=next_point.device)].unsqueeze(0)
+                # input_ids_new = []
+                # index_count = 0
+                # for i in range(0, input_ids.shape[-1]-max_new_tokens_unit, max_new_tokens_unit):
+                #     input_ids_new.append(next_point[:, i:i+max_new_tokens_unit])
+                #     index_count += max_new_tokens_unit
+                #     input_ids_new.append(gist_tokens)
+                #     index_count += num_gist_tokens
+                # i += max_new_tokens_unit
+                # input_ids_new.append(next_point[:, i:i+max_new_tokens_unit])
+                # next_point = torch.cat(input_ids_new, dim=1)
+                
+                # remove gist token for jacobian_trajectory
                 mask = torch.ones_like(next_point, dtype=torch.bool, device=next_point.device)
                 if len(gist_index) > 0:
                     mask[:, gist_index] = False
