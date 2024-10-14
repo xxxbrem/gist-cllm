@@ -198,7 +198,7 @@ def make_gist_mask(inputs, gist_token_id, prompt_len=0):
     rec = 0
     gist_flag = False
     for i in range(inputs.shape[-1]):
-        if inputs[0][i] == gist_token_id:
+        if inputs[0][i] in gist_token_id:
             if gist_flag == False:
                 gist_mask[rec:i, rec:i] = 1
                 gist_flag = True
