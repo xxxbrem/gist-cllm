@@ -193,21 +193,31 @@ def _prepare_decoder_attention_mask(
 
     return combined_attention_mask
 
-def make_gist_mask(inputs, gist_token_id, prompt_len=0):
+def make_gist_mask(inputs, gist_token_id, max_new_tokens=64, prompt_len=0, max_new_tokens_unit=16):
     gist_mask = torch.zeros((inputs.shape[-1], inputs.shape[-1]), device=inputs.device)
     rec = 0
     gist_flag = False
+    have_gist = False
     for i in range(inputs.shape[-1]):
         if inputs[0][i] in gist_token_id:
+            have_gist = True
             if gist_flag == False:
                 gist_mask[rec:i, rec:i] = 1
+                if rec > max_new_tokens_unit + 1:
+                    gist_mask[rec:i, :rec-max_new_tokens_unit-1] = 1
                 gist_flag = True
             gist_mask[:, i] = 1
             # gist_mask[i, :] = 1
             rec = i
+            gist_token_index = i
         else:
             gist_flag = False
+    if have_gist == False:
+        return None
     gist_mask[rec:, rec:] = 1
+    if inputs.shape[-1] > max_new_tokens + gist_token_id.shape[-1]:
+        gist_mask[-max_new_tokens_unit:, :] = 1
+        gist_mask[-max_new_tokens_unit:, gist_token_index:-max_new_tokens_unit] = 0
     if prompt_len:
         gist_mask_full = torch.ones((inputs.shape[-1], prompt_len+inputs.shape[-1]), device=inputs.device)
         gist_mask_full[-inputs.shape[-1]:, -inputs.shape[-1]:] = gist_mask

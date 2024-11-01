@@ -7,3 +7,4 @@ eval/gsm8k/__pycache__
 data/speedup_profiling_results
 tmp.md
 eval/gsm8k/output.json
+*.png

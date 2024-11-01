@@ -516,7 +516,9 @@ def gist_jacobi_forward(
         if num_gist_tokens > 0:
             gist_token_id = tokenizer.encode([f'<GIST{k}>' for k in range((itr-1)*(max_new_tokens//max_new_tokens_unit-1), (itr)*(max_new_tokens//max_new_tokens_unit-1))])[1:]
             # gist_token_id = tokenizer.encode([f'<GIST{(itr-1)*max_new_tokens//max_new_tokens_unit+i//max_new_tokens_unit}>'])[1:]
-            gist_tokens = torch.tensor(gist_token_id, device=input_ids.device).repeat_interleave(num_gist_tokens).unsqueeze(0)
+            gist_tokens = torch.tensor(gist_token_id, device=input_ids.device).unsqueeze(0)
+
+            # sentence gist
             input_ids_new = []
             gist_index = []
             index_count = 0
@@ -529,6 +531,14 @@ def gist_jacobi_forward(
                 index_count += num_gist_tokens
             input_ids_new.append(input_ids[:, -max_new_tokens_unit:])
             next_point = torch.cat(input_ids_new, dim=1)
+
+            # batch gist
+            # gist_tokens_repeated = gist_tokens.repeat(num_gist_tokens, 1).T
+            # insert_left = torch.cat([torch.zeros_like(gist_tokens_repeated, device=input_ids.device)[0].unsqueeze(0), gist_tokens_repeated], dim=0)
+            # insert_right = torch.cat([gist_tokens_repeated, torch.zeros_like(gist_tokens_repeated, device=input_ids.device)[0].unsqueeze(0)], dim=0)
+            # batch_size_gist = max_new_tokens // max_new_tokens_unit
+            # next_point = torch.cat([insert_left, input_ids.view(batch_size_gist, max_new_tokens_unit), insert_right], dim=1)
+            
         else:
             next_point = input_ids
 
@@ -557,6 +567,8 @@ def gist_jacobi_forward(
                     past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
                 )
                 position_ids = position_ids.unsqueeze(0)
+                if current_point.shape[-1] > max_new_tokens + max_new_tokens//max_new_tokens_unit:
+                    position_ids[:, -max_new_tokens_unit:] = torch.arange(past_key_values_length+gist_index[0], past_key_values_length+gist_index[0]+max_new_tokens_unit, dtype=torch.long, device=device)
 
             if num_gist_tokens > 0:
                 seq_length_with_past = seq_length
@@ -573,11 +585,11 @@ def gist_jacobi_forward(
                     inputs_embeds,
                     past_key_values_length,
                 )
-
+                # sentence gist
                 attention_mask_gist_float = torch.full_like(
                     attention_mask, torch.tensor(torch.finfo(attention_mask.dtype).min)
                 )
-                attention_mask_gist = make_gist_mask(current_point, gist_tokens, past_key_values_length)
+                attention_mask_gist = make_gist_mask(current_point, gist_tokens, max_new_tokens, past_key_values_length, max_new_tokens_unit)
                 if attention_mask_gist is not None:
                     attention_mask_gist_float = attention_mask_gist_float.masked_fill(
                         attention_mask_gist.bool(), 0.0
@@ -628,12 +640,7 @@ def gist_jacobi_forward(
             all_shift_one_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1) / 0.01, dim=-1)
             next_point = torch.cat((current_point[0, 0].view(1,-1), all_shift_one_token[0, :seq_length-1].view(1,-1)), dim=-1)
             if num_gist_tokens > 0 and iter_counter > 0:
-                # force gist token
-                gist_index_save.append(next_point[:, gist_index].cpu().tolist()[0])
-                next_point_clone = next_point.clone()
-                next_point_clone[:, gist_index] = gist_tokens
-                next_point = next_point_clone
-                
+                # sentence gist
                 # remove gist token for jacobian_trajectory
                 mask = torch.ones_like(next_point, dtype=torch.bool, device=next_point.device)
                 mask[:, gist_index] = False
@@ -644,30 +651,30 @@ def gist_jacobi_forward(
                     first_correct_token = torch.argmax(torch.nn.functional.softmax(logits, dim=-1), dim=-1)[:,-1]
                     break
 
-                # current_correct_index = torch.where(torch.eq(current_point, next_point) == False)[1][0]
-                
-                # respectively check
-                # for i in range(completed_unit, len(gist_index)):
-                #     start = 0 if i == 0 else gist_index[i-1]
-                #     if torch.all(torch.eq(current_point[:, start:gist_index[i]+1], next_point[:, start:gist_index[i]+1])).item():
-                #         completed_unit += 1
-                #     else:
-                #         current_correct_index[f'{i}'] = torch.where(torch.eq(current_point[:, start:gist_index[i]+1], next_point[:, start:gist_index[i]+1]) == False)[1][0]
-                #         if previous_correct_index:
-                #             if gist_index[i] - start - current_correct_index[f'{i}'] < 8:
-                #                 # period
-                #                 if 29889 in next_point[0, gist_index[i]-8:gist_index[i]]:
-                #                     period_pos = torch.where(next_point[0, gist_index[i]-8:gist_index[i]] == 29889)[0] 
-                #                     if isinstance(period_pos, (int)) == False:
-                #                         period_pos = min(period_pos)
-                #                     period_index = period_pos + gist_index[i]-8 + 1
-                #                     next_point = torch.cat((next_point[:, :period_index], next_point[:, gist_index[i]:], next_point[:, period_index:gist_index[i]]), dim=1)
-                #                     gist_index[i:] = [gist_index[i] - int(gist_index[completed_unit] - period_index) for i in range(i, len(gist_index))]
-                                # elif gist_index_save[-1][i] != gist_token_id[i] or (gist_index_save[-1][i-1] != 29889 and gist_index_save[-1][i+1] != 29889):
-                                #     next_point = torch.cat((next_point[:, :gist_index[i]], torch.tensor(gist_index_save, device=next_point.device)[-3:, i:i+1].view(1, -1), next_point[:, gist_index[i]:-3]), dim=1)
-                                #     gist_index[i:] = [gist_index[i] + 1 for i in range(i, len(gist_index))] 
-                    previous_correct_index = current_correct_index
+                if len(gist_index) > 0:
+                    # respectively check
+                    start = max_new_tokens_unit * completed_unit + num_gist_tokens if completed_unit != 0 else 0
+                    # force gist token when 1/3 generated
+                    # if torch.where(torch.eq(current_point[:, start:gist_index[0]+1], next_point[:, start:gist_index[0]+1]) == False)[1][0] > max_new_tokens_unit // 3:
+                        # gist_index_save.append(next_point[:, gist_index].cpu().tolist()[0])
+                    next_point_clone = next_point.clone()
+                    assert num_gist_tokens == 1
+                    next_point_clone[:, gist_index[0]] = gist_tokens[:, 0]
+                    next_point_clone[:, gist_index[0]+1] = gist_tokens[:, 0]
+                    next_point = next_point_clone
+                    if next_point.shape[-1] == max_new_tokens + max_new_tokens // max_new_tokens_unit - 1:
+                        next_point = torch.cat([next_point, next_point[:, gist_index[0] - max_new_tokens_unit:gist_index[0]]], dim=1)
+
+                    if torch.all(torch.eq(current_point[:, start:gist_index[0]+1], next_point[:, start:gist_index[0]+1])).item():
+                        completed_unit += 1
+                        next_point = torch.cat([next_point[:, :gist_index[0]], next_point[:, -max_new_tokens_unit:], next_point[:, gist_index[0]:-max_new_tokens_unit*2]], dim=1)
+                        gist_index = gist_index[1:]
+                        gist_tokens = gist_tokens[:, 1:]
                         
+
+
+                # batch gist
+                # print()
             else: 
                 jacobian_trajectory.append(next_point)
                 
