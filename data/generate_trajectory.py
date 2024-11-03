@@ -269,7 +269,7 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
     else:
         raise NotImplementedError('Jacobi trajectory collection for dataset: {filename.lower()} is not currently supported.')
         
-    prompt_size = min(len(train_dataset), data_size)
+    prompt_size = min(len(train_dataset), int(data_size))
 
     counter = 0
     new_data = []
@@ -344,11 +344,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", type=str,
                         default="data/raw_data/gsm8k_train.jsonl")
-    parser.add_argument("--max_new_tokens", type=int, default=16)
-    parser.add_argument("--max_new_seq_len", type=int, default=512)
+    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--max_new_seq_len", type=int, default=1024)
     parser.add_argument("--model", type=str,
-                        # default="models/vicuna-7b-v1.5")
-                        default="models/TinyLlama_v1.1_math_code")
+                        default="models/Abel-7B-001")
     parser.add_argument("--data_size", default=20000)
     parser.add_argument("--use_aug", default=True)
     parser.add_argument("--use_labels", default=True)

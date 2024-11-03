@@ -8,9 +8,9 @@ n_token_seq_size=$4
 qlora=$5
 num_gist_token=$6
 
-torchrun --nnodes=1 --nproc_per_node=4 --rdzv_id=101 --rdzv_endpoint='localhost:5666' \
+torchrun -m --nnodes=1 --nproc_per_node=4 --rdzv_id=101 --rdzv_endpoint='localhost:5666' \
     --master_port 10000 \
-    cllm/train_cllm_global.py \
+    gist_cllm.train_cllm_global \
     --target_model_path ${model_path} \
     --data_path ${trajectory_file} \
     --output_dir ${output_path} \

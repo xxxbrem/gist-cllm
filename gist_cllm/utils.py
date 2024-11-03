@@ -193,7 +193,7 @@ def _prepare_decoder_attention_mask(
 
     return combined_attention_mask
 
-def make_gist_mask(inputs, gist_token_id, max_new_tokens=64, prompt_len=0, max_new_tokens_unit=16):
+def make_gist_mask(inputs, gist_token_id, training=False, max_new_tokens=64, prompt_len=0, max_new_tokens_unit=16):
     gist_mask = torch.zeros((inputs.shape[-1], inputs.shape[-1]), device=inputs.device)
     rec = 0
     gist_flag = False
@@ -207,7 +207,8 @@ def make_gist_mask(inputs, gist_token_id, max_new_tokens=64, prompt_len=0, max_n
                     gist_mask[rec:i, :rec-max_new_tokens_unit-1] = 1
                 gist_flag = True
             gist_mask[:, i] = 1
-            # gist_mask[i, :] = 1
+            if training:
+                gist_mask[i, :] = 1
             rec = i
             gist_token_index = i
         else:

@@ -7,6 +7,7 @@ import random
 from torch.utils.data import DataLoader
 # from utils import _prepare_decoder_attention_mask
 from torch.nn import CrossEntropyLoss
+from utils import make_gist_mask
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
@@ -75,6 +76,10 @@ class CllmTrainer(Trainer):
         # random select one point from trajectory
         i = random.choice(range(len(jacobian_trajectory))[:-1])
 
+        # insert gist
+        attention_mask_gist = make_gist_mask()
+
+
         attention_mask = torch.full_like(jacobian_trajectory[0], 1).to(jacobian_trajectory[0].device)
         attention_mask = jacobian_trajectory[i] != self.tokenizer.pad_token_id
         logits_i = self.get_logits(model, jacobian_trajectory[i].clone().detach(), attention_mask)
@@ -98,7 +103,7 @@ class CllmTrainer(Trainer):
         print(f'loss consistency {loss_consistency} computed! performing backward pass...')
         with self.accelerator.accumulate(model):
             self.accelerator.backward(loss_consistency)
-        
+          
         ### compute Gist loss ###
         # batch size = 1
         attention_mask = None
@@ -179,15 +184,15 @@ class CllmTrainer(Trainer):
             # total loss = ar_loss + consistency_global_loss
             loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach() 
         
-        else:   
-            if self.args.local_rank == 0:
-                wandb.log({"ar loss": loss_ar})
-                wandb.log({"consistency loss": loss_consistency})
-                
-            # sync processes
-            # torch.distributed.barrier()
-            # total loss = ar_loss + consistency_global_loss
-            loss = loss_ar.detach() + loss_consistency.detach()
+        # else:   
+        if self.args.local_rank == 0:
+            wandb.log({"ar loss": loss_ar})
+            wandb.log({"consistency loss": loss_consistency})
+            
+        # sync processes
+        # torch.distributed.barrier()
+        # total loss = ar_loss + consistency_global_loss
+        loss = loss_ar.detach() + loss_consistency.detach()
 
         return loss
     

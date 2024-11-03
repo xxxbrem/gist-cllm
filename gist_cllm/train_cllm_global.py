@@ -334,16 +334,6 @@ def train():
             -training_args.gist_token_kinds:
         ] = model.model.embed_tokens.weight[:-training_args.gist_token_kinds].mean(0)
         model.lm_head.weight[-training_args.gist_token_kinds:] = model.lm_head.weight[:-training_args.gist_token_kinds].mean(0)
-    
-    # get gist mask
-    max_new_tokens = training_args.max_new_tokens
-    mask_width = max_new_tokens*2 + training_args.num_gist_token
-    attention_mask_gist = torch.zeros([1, 1, mask_width, mask_width], device=model.device)
-    attention_mask_gist[:, :, :max_new_tokens, :max_new_tokens] = 1
-    attention_mask_gist[:, :, -max_new_tokens:, -max_new_tokens:] = 1
-    attention_mask_gist[:, :, max_new_tokens:max_new_tokens+training_args.num_gist_token, :] = 1
-    attention_mask_gist[:, :, :, max_new_tokens:max_new_tokens+training_args.num_gist_token] = 1
-    training_args.attention_mask_gist = attention_mask_gist
 
     trainer = CllmTrainer(
         model=model, tokenizer=tokenizer, args=training_args, **data_module
