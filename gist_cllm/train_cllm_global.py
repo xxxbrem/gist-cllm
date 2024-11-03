@@ -61,15 +61,21 @@ class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
-        default=512,
+        default=1024,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
     )
     max_new_tokens: int = field(
-        default=16,
+        default=64,
         metadata={
             "help": "Size of n_token_sequence in Jacobi trajectory."
+        },
+    )
+    max_new_tokens_unit: int = field(
+        default=16,
+        metadata={
+            "help": "Size of n_token_sequence_unit in Jacobi trajectory."
         },
     )
     use_gt_labels: bool = False
@@ -82,8 +88,8 @@ class TrainingArguments(transformers.TrainingArguments):
     output_dir: str = field(
         default="out"
     )
-    num_gist_token: int = field(
-        default=0
+    num_each_gist_token: int = field(
+        default=1
     )
     attention_mask_gist: torch.tensor = None
     per_device_train_batch_size: int = field(
@@ -325,7 +331,7 @@ def train():
     # Initialize gist token
     # Warning: the new embedding dimension will be 32001. This might induce some performance reduction as *Tensor Cores* will not be available. 
     training_args.gist_token_kinds = training_args.model_max_length // training_args.max_new_tokens - 1
-    tokenizer.add_special_tokens({"additional_special_tokens": [f"<GIST{i}>" for i in range(training_args.gist_token_kinds)]})
+    tokenizer.add_special_tokens({"additional_special_tokens": [f"<GIST0{i}>" if i < 10 else f"<GIST{i}>" for i in range(training_args.gist_token_kinds)]})
     model.resize_token_embeddings(len(tokenizer))
     # Set new word embedding to average of existing word embeddings. For why,
     # see https://nlp.stanford.edu/~johnhew/vocab-expansion.html
