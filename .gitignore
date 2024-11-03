@@ -9,3 +9,4 @@ tmp.md
 eval/gsm8k/output.json
 *.png
 data/__pycache__
+out
