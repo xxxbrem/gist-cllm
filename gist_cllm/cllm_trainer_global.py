@@ -129,83 +129,83 @@ class CllmTrainer(Trainer):
 
         ### compute Gist loss ###
         # batch size = 1
-        attention_mask = None
-        batch_size = 0
-        right_answer = jacobian_trajectory[-1]
-        loss_gist = None
-        start = prompt_id_len[0]
-        seq_length = len(right_answer[batch_size])
+        # attention_mask = None
+        # batch_size = 0
+        # right_answer = jacobian_trajectory[-1]
+        # loss_gist = None
+        # start = prompt_id_len[0]
+        # seq_length = len(right_answer[batch_size])
             
-        if self.args.num_gist_token > 0:
-            assert start <= seq_length - max_new_tokens*2
+        # if self.args.num_gist_token > 0:
+        #     assert start <= seq_length - max_new_tokens*2
             
-            gist_token = self.tokenizer.encode(f"<GIST{inputs['jacobian_itr_id'][0].split('_')[-1]}>")[-1]
-            # trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
-            # line_break_id = self.tokenizer.encode("\n")[-1]
-            # _, line_break_id_index = torch.where(right_answer == line_break_id)
-            # assert line_break_id_index[1] + 3 == line_break_id_index[2]
+        #     gist_token = self.tokenizer.encode(f"<GIST{inputs['jacobian_itr_id'][0].split('_')[-1]}>")[-1]
+        #     # trajectory_decode = self.tokenizer.decode(right_answer[batch_size])
+        #     # line_break_id = self.tokenizer.encode("\n")[-1]
+        #     # _, line_break_id_index = torch.where(right_answer == line_break_id)
+        #     # assert line_break_id_index[1] + 3 == line_break_id_index[2]
             
-            # start = len(jacobian_trajectory[-1][0]) - max_new_tokens
-            # assert seq_length - max_new_tokens*2 >= start
-            random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens)) if start < seq_length - max_new_tokens*2 else start
+        #     # start = len(jacobian_trajectory[-1][0]) - max_new_tokens
+        #     # assert seq_length - max_new_tokens*2 >= start
+        #     random_start = random.choice(range(start, seq_length - max_new_tokens*2, max_new_tokens)) if start < seq_length - max_new_tokens*2 else start
             
-            attention_mask_gist = self.args.attention_mask_gist
-            full_len = start + max_new_tokens*2 + self.args.num_gist_token
+        #     attention_mask_gist = self.args.attention_mask_gist
+        #     full_len = start + max_new_tokens*2 + self.args.num_gist_token
         
-            attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
-            attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist                 
+        #     attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
+        #     attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist                 
             
-            # insert gist tokens
-            adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
-                torch.full_like(right_answer, gist_token, device=right_answer.device)[:, :self.args.num_gist_token], \
-                right_answer[:, random_start+max_new_tokens:random_start+2*max_new_tokens] \
-                # if random_start+2*max_new_tokens <= seq_length \
-                # else torch.nn.functional.pad(right_answer[:, random_start+max_new_tokens:], (0, max_new_tokens+random_start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
-                ), dim=1)
+        #     # insert gist tokens
+        #     adjacent_seq = torch.cat((right_answer[:, random_start:random_start+max_new_tokens], \
+        #         torch.full_like(right_answer, gist_token, device=right_answer.device)[:, :self.args.num_gist_token], \
+        #         right_answer[:, random_start+max_new_tokens:random_start+2*max_new_tokens] \
+        #         # if random_start+2*max_new_tokens <= seq_length \
+        #         # else torch.nn.functional.pad(right_answer[:, random_start+max_new_tokens:], (0, max_new_tokens+random_start+2*max_new_tokens-seq_length), value=self.tokenizer.pad_token_id) \
+        #         ), dim=1)
 
-            #     assert start == seq_length - max_new_tokens
-            #     full_len = start + max_new_tokens + self.args.num_gist_token
-            #     attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
-            #     attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
+        #     #     assert start == seq_length - max_new_tokens
+        #     #     full_len = start + max_new_tokens + self.args.num_gist_token
+        #     #     attention_mask_gist_full = torch.ones([1, 1, full_len, full_len], device=attention_mask_gist.device)
+        #     #     attention_mask_gist_full[:, :, -attention_mask_gist.shape[-1]:, -attention_mask_gist.shape[-1]:] = attention_mask_gist
                 
-            #     random_start = start
-            # predict
-            input_ids = torch.cat((right_answer[:, :start], adjacent_seq), dim=1)
-            # inputs_embeds = model.get_input_embeddings()(input_ids)
-            #   past_key_values_length ?
-            # attention_mask = self.get_attention_mask(attention_mask, inputs_embeds, attention_mask_gist_full, 0)
-            logits_i = self.get_logits(model, input_ids.clone().detach(), attention_mask, attention_mask_gist_full)
-            # loss
-            input_ids[:, :random_start] = -100
-            # Shift so that tokens < n predict n
-            shift_logits = logits_i[..., :-1, :].contiguous()
-            shift_labels = input_ids[..., 1:].contiguous()
-            # Flatten the tokens
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(
-                shift_logits.view(-1, shift_logits.shape[-1]), shift_labels.view(-1)
-            ).float()
-            loss_gist = loss
-                # accumulated loss
-                # loss_gist += loss.detach
+        #     #     random_start = start
+        #     # predict
+        #     input_ids = torch.cat((right_answer[:, :start], adjacent_seq), dim=1)
+        #     # inputs_embeds = model.get_input_embeddings()(input_ids)
+        #     #   past_key_values_length ?
+        #     # attention_mask = self.get_attention_mask(attention_mask, inputs_embeds, attention_mask_gist_full, 0)
+        #     logits_i = self.get_logits(model, input_ids.clone().detach(), attention_mask, attention_mask_gist_full)
+        #     # loss
+        #     input_ids[:, :random_start] = -100
+        #     # Shift so that tokens < n predict n
+        #     shift_logits = logits_i[..., :-1, :].contiguous()
+        #     shift_labels = input_ids[..., 1:].contiguous()
+        #     # Flatten the tokens
+        #     loss_fct = CrossEntropyLoss()
+        #     loss = loss_fct(
+        #         shift_logits.view(-1, shift_logits.shape[-1]), shift_labels.view(-1)
+        #     ).float()
+        #     loss_gist = loss
+        #         # accumulated loss
+        #         # loss_gist += loss.detach
         
-            if self.args.qlora:
-                loss_gist.requires_grad = True
-            print(f'loss gist: {loss_gist} computed! performing backward pass...')
-            with self.accelerator.accumulate(model):
-                self.accelerator.backward(loss_gist)
+        #     if self.args.qlora:
+        #         loss_gist.requires_grad = True
+        #     print(f'loss gist: {loss_gist} computed! performing backward pass...')
+        #     with self.accelerator.accumulate(model):
+        #         self.accelerator.backward(loss_gist)
                 
                 
-            if self.args.local_rank == 0:
-                wandb.log({"ar loss": loss_ar})
-                wandb.log({"consistency loss": loss_consistency})
-                wandb.log({"gist loss": loss_gist})
+        #     if self.args.local_rank == 0:
+        #         wandb.log({"ar loss": loss_ar})
+        #         wandb.log({"consistency loss": loss_consistency})
+        #         wandb.log({"gist loss": loss_gist})
 
                 
-            # sync processes
-            # torch.distributed.barrier()
-            # total loss = ar_loss + consistency_global_loss
-            loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach() 
+        #     # sync processes
+        #     # torch.distributed.barrier()
+        #     # total loss = ar_loss + consistency_global_loss
+        #     loss = loss_ar.detach() + loss_consistency.detach() + loss_gist.detach() 
         
         # else:   
         if self.args.local_rank == 0:
