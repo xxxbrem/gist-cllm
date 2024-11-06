@@ -309,7 +309,7 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
             #         dic["answer_trajectory_ids"].insert(0, aug_trajectory)
             if use_aug:
                 for j in range(len(dic["answer_trajectory_ids"])-3, -1, -1):
-                    correct_positions = torch.where(torch.tensor(dic["answer_trajectory_ids"][j]!=dic["answer_trajectory_ids"][-1]))[0]
+                    correct_positions = torch.where(torch.tensor(dic["answer_trajectory_ids"][j]!=dic["answer_trajectory_ids"][-1]))[0] # correct_positions = torch.where(torch.tensor(dic["answer_trajectory_ids"][j])!=torch.tensor(dic["answer_trajectory_ids"][-1]))[0]
                     for correct_id in random.choices(correct_positions, k=8):
                         aug_trajectory = dic["answer_trajectory_ids"][j].copy()
                         aug_trajectory[correct_id] = dic["answer_trajectory_ids"][-1][correct_id]
@@ -349,8 +349,8 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str,
                         default="models/Abel-7B-001")
     parser.add_argument("--data_size", default=20000)
-    parser.add_argument("--use_aug", default=True)
-    parser.add_argument("--use_labels", default=True)
+    parser.add_argument("--use_aug", action='store_true')
+    parser.add_argument("--use_labels", action='store_true')
     args = parser.parse_args()
     filename = args.filename
     model_path = args.model
