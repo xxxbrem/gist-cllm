@@ -52,7 +52,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default="data/collected_jacobi_trajectory/cleaned_Abel-7B-001_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024_clear_itr_0.json", metadata={"help": "Path to the training data."}
+        default=None, metadata={"help": "Path to the training data."}
     )
     lazy_preprocess: bool = False
 
@@ -98,6 +98,7 @@ class TrainingArguments(transformers.TrainingArguments):
     gist_token_kinds: int = field(
         default=0
     )
+    use_cross_entropy: Optional[bool] = field(default=False)
 
 def rank0_print(local_rank, *args):
     if local_rank == 0:
