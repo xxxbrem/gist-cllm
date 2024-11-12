@@ -21,11 +21,11 @@ def construct_gist_training_data(input_path, output_path):
             continue
         if data[i]['labels_ids'] != tmp[-1]['labels_ids']:
             tmp = [data[i]]
-            assert data_gist[-1]['teacher_output_ids'] == data_gist[-1]['complete_teacher_output_ids']
+            assert data_gist[-1]['teacher_output_ids'][0] == data_gist[-1]['complete_teacher_output_ids']
             continue
         dic = {}
         tmp.append(data[i])
-        dic['labels_ids'] = data[i]['labels_ids']
+        dic['data_id'] = data[i]['data_id']
         dic['jacobian_itr_id'] = tmp[0]['jacobian_itr_id']
         dic['prompt_ids_len'] = tmp[0]['prompt_ids_len']
         dic['prompt_ids'] = tmp[0]['prompt_ids']
@@ -39,8 +39,8 @@ def construct_gist_training_data(input_path, output_path):
             dic['answer_trajectory_ids'].append(added_trajectory)
 
         dic['labels_ids'] = tmp[0]['labels_ids']
-        dic['teacher_output_ids'] = data_gist[-1]['teacher_output_ids'] + data[i]['answer_trajectory_ids'][-1] if dic['jacobian_itr_id'] != 'itr_0' \
-                                    else dic['prompt_ids'][0][0] + dic['answer_trajectory_ids'][-1]
+        dic['teacher_output_ids'] = [data_gist[-1]['teacher_output_ids'][0] + data[i]['answer_trajectory_ids'][-1]] if dic['jacobian_itr_id'] != 'itr_0' \
+                                    else [dic['prompt_ids'][0][0] + dic['answer_trajectory_ids'][-1]]
         dic['complete_teacher_output_ids'] = tmp[0]['complete_teacher_output_ids']
         data_gist.append(dic)
         tmp = tmp[1:]

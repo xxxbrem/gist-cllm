@@ -116,6 +116,8 @@ class CllmTrainer(Trainer):
                     output_mask[j, :] = True
                 else:
                     output_mask[j, :end_of_mask_position[0]] = True
+            output_mask[:, gist_token_index] = True
+            
 
             gist_token_index = [torch.where(label_add_gist == i)[-1][0] for i in gist_token_ids]
             for i in range(len(gist_token_index)):
