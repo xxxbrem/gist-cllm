@@ -274,7 +274,7 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
     counter = 0
     new_data = []
 
-    for i in tqdm(range(prompt_size)):
+    for i in tqdm(range(int(args.data_begin), prompt_size)):
         d = train_dataset[i]
         inputs = torch.Tensor(d['sources_input_ids']).unsqueeze(0).to(device=model.device, dtype=torch.int)
 
@@ -335,6 +335,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_new_seq_len", type=int, default=1024)
     parser.add_argument("--model", type=str,
                         default="models/Abel-7B-001")
+    parser.add_argument("--data_begin", default=0)
     parser.add_argument("--data_size", default=20000)
     parser.add_argument("--use_aug", action='store_true')
     parser.add_argument("--use_labels", action='store_true')

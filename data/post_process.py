@@ -19,9 +19,12 @@ def construct_gist_training_data(input_path, output_path):
         if len(tmp) < window_size - 1:
             tmp.append(data[i])
             continue
-        if data[i]['labels_ids'] != tmp[-1]['labels_ids']:
+        if data[i]['data_id'] != tmp[-1]['data_id']:
+            current_data_id = tmp[-1]['data_id']
+            if data_gist[-1]['teacher_output_ids'][0] != data_gist[-1]['complete_teacher_output_ids']:
+                while data_gist[-1]['data_id'] == current_data_id:
+                    data_gist.pop()
             tmp = [data[i]]
-            assert data_gist[-1]['teacher_output_ids'][0] == data_gist[-1]['complete_teacher_output_ids']
             continue
         dic = {}
         tmp.append(data[i])
@@ -49,6 +52,6 @@ def construct_gist_training_data(input_path, output_path):
         json.dump(data_gist, outfile)
 
 
-input_path = 'data/collected_jacobi_trajectory/cleaned_gsm8k_train.jsonl_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024.json'
-output_path = 'data/collected_jacobi_trajectory/cleaned_gsm8k_train.jsonl_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024_gist.json'
+input_path = 'data/collected_jacobi_trajectory/cleaned_gsm8k_train.jsonl_jacobi_max_new_tokens16_augFalse_labels_True_max_seq_len_1024.json'
+output_path = 'data/collected_jacobi_trajectory/cleaned_gsm8k_train.jsonl_jacobi_max_new_tokens16_augFalse_labels_True_max_seq_len_1024_gist.json'
 construct_gist_training_data(input_path, output_path)

@@ -1,5 +1,18 @@
 # gist-cllm
 
+## Generate Trajectories
+
+Here we don't use aug.
+```
+python -m data.generate_trajectory \
+    --max_new_tokens 16 \
+    --max_new_seq_len 1024 \
+    --use_labels \
+    --data_size 10000 \
+    --model models/Abel-7B-001 \
+    --filename data/raw_data/gsm8k_train.jsonl
+```
+
 ## Train
 
 1. Directly download Jacobi trajectory to `data/collected_jacobi_trajectory/` from [HuggingFace](https://huggingface.co/datasets/xxxbrem/jacobi_trajectory_abel1)
