@@ -331,7 +331,7 @@ def train():
 
     # Initialize gist token
     # Warning: the new embedding dimension will be 32001. This might induce some performance reduction as *Tensor Cores* will not be available. 
-    training_args.gist_token_kinds = training_args.model_max_length // training_args.max_new_tokens - 1
+    training_args.gist_token_kinds = training_args.model_max_length // training_args.max_new_tokens_unit - 1
     tokenizer.add_special_tokens({"additional_special_tokens": [f"<GIST0{i}>" if i < 10 else f"<GIST{i}>" for i in range(training_args.gist_token_kinds)]})
     model.resize_token_embeddings(len(tokenizer))
     # Set new word embedding to average of existing word embeddings. For why,
