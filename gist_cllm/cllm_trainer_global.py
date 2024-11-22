@@ -81,8 +81,10 @@ class CllmTrainer(Trainer):
         inputs_add_gist = jacobian_trajectory[i]
         label_add_gist = jacobian_trajectory[-1]
         gist_token_ids = []
-        for j in range(max_new_tokens-self.args.max_new_tokens_unit, -1, -self.args.max_new_tokens_unit):
-            gist_token = self.tokenizer.encode(f"<GIST{itr_index}>" if itr_index > 10 else f"<GIST0{itr_index}>")[-1]
+        for j in range(max_new_tokens-self.args.max_new_tokens_unit, 0, -self.args.max_new_tokens_unit):
+            GIST = f"<GIST{itr_index}>" if itr_index >= 10 else f"<GIST0{itr_index}>"
+            assert len(self.tokenizer.encode(GIST)) == 2, f"GIST: {GIST}, encode: {self.tokenizer.encode(GIST)}"
+            gist_token = self.tokenizer.encode(GIST)[-1]
             inputs_add_gist = torch.cat([inputs_add_gist[:, :-j], torch.full_like(inputs_add_gist, gist_token, device=inputs_add_gist.device)[:, :self.args.num_each_gist_token], inputs_add_gist[:, -j:]], dim=1)
             label_add_gist = torch.cat([label_add_gist[:, :-j], torch.full_like(label_add_gist, gist_token, device=label_add_gist.device)[:, :self.args.num_each_gist_token], label_add_gist[:, -j:]], dim=1)
             gist_token_ids.append(gist_token)
