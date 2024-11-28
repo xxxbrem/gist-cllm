@@ -31,13 +31,14 @@ from pathlib import Path
 path_root = Path(__file__).parents[2]
 sys.path.append(str(path_root))
 
-from cllm.utils import detect_repetitive_patterns
-from cllm.cllm_llama_modeling import delete_false_key_value, jacobi_forward_profiling
+from gist_cllm.utils import detect_repetitive_patterns
+from gist_cllm.cllm_llama_modeling import delete_false_key_value, jacobi_forward_profiling, gist_jacobi_forward
 
 DynamicCache.delete_false_key_value = delete_false_key_value
-LlamaForCausalLM.jacobi_forward = jacobi_forward_profiling
+LlamaForCausalLM.jacobi_forward = gist_jacobi_forward
+# LlamaForCausalLM.jacobi_forward = jacobi_forward_profiling
 
-def jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len):
+def jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len, max_new_tokens_unit, num_gist_tokens):
     converge_step = []
     forward_times = 0
 
@@ -45,7 +46,7 @@ def jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len):
     prompt_len = torch.sum(inputs['attention_mask'], dim=-1)
     generation = inputs['input_ids']
     ### prefill the kv-cache
-    past_key_values, first_correct_token = model.jacobi_forward(input_ids=inputs['input_ids'], max_new_tokens=max_new_tokens, past_key_values=None, use_cache = True, prefill_phase = True)
+    past_key_values, first_correct_token = model.jacobi_forward(tokenizer, input_ids=inputs['input_ids'], max_new_tokens=max_new_tokens, past_key_values=None, use_cache = True, prefill_phase = True)
     ### generation phase
     itr = 0
     eos_reached = False
@@ -53,9 +54,11 @@ def jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len):
         itr+=1
         bsz = 1 # only support batch_size = 1 now
         # randomly initialize the first point of jacobian trajectory
+        random.seed(42)
         random_point = torch.tensor(random.choices(generation[0], k=(max_new_tokens-1)), device="cuda").view(1,-1)
         input_ids = torch.cat((first_correct_token.view(1,-1), random_point),dim=-1)
-        jacobian_trajectory, n_gram_generation, first_correct_token, iter_steps = model.jacobi_forward(input_ids=input_ids, max_new_tokens=max_new_tokens, past_key_values=past_key_values, use_cache = True, prefill_phase = False)
+        jacobian_trajectory, n_gram_generation, first_correct_token, iter_steps = model.jacobi_forward(tokenizer, input_ids=input_ids, max_new_tokens=max_new_tokens, past_key_values=past_key_values, use_cache = True, prefill_phase = False, max_new_tokens_unit=max_new_tokens_unit, num_gist_tokens=num_gist_tokens, itr=itr)
+        # jacobian_trajectory, n_gram_generation, first_correct_token, iter_steps = model.jacobi_forward(tokenizer, input_ids=input_ids, max_new_tokens=max_new_tokens, past_key_values=past_key_values, use_cache = True, prefill_phase = False)
         forward_times += iter_steps
         all_jacobian_trajectory.append(jacobian_trajectory)
         eos_positions = torch.where(n_gram_generation[0]==tokenizer.eos_token_id)[0]
@@ -73,7 +76,7 @@ def jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len):
 
     return generation[0, prompt_len:], converge_step, all_jacobian_trajectory
 
-def jacobian_speed_evaluate(processed_prompt, model, tokenizer, max_new_tokens, max_new_seq_len):
+def jacobian_speed_evaluate(processed_prompt, model, tokenizer, max_new_tokens, max_new_seq_len, max_new_tokens_unit, num_gist_tokens):
 
     time_speed = []
     eos_reached = False
@@ -81,7 +84,7 @@ def jacobian_speed_evaluate(processed_prompt, model, tokenizer, max_new_tokens, 
     t1 = torch.cuda.Event(enable_timing=True)
     t2 = torch.cuda.Event(enable_timing=True)
     t1.record()
-    jacobi_generation, converge_step, all_jacobian_trajectory = jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len)
+    jacobi_generation, converge_step, all_jacobian_trajectory = jacobi_generate(inputs, model, tokenizer, max_new_tokens, max_new_seq_len, max_new_tokens_unit, num_gist_tokens)
     t2.record()
     torch.cuda.synchronize()
     
@@ -102,7 +105,8 @@ def jacobian_speed_evaluate(processed_prompt, model, tokenizer, max_new_tokens, 
 def speed_compare(args):
     # Load model and tokenizer
     model = transformers.LlamaForCausalLM.from_pretrained(args.test_model_path, low_cpu_mem_usage=True, device_map='auto', 
-                                             torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+                                            #  torch_dtype=torch.bfloat16, attn_implementation="flash_attention_2")
+                                            torch_dtype=torch.bfloat16)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         args.teacher_model_path,
         padding_side="right",
@@ -119,7 +123,7 @@ def speed_compare(args):
             data.append(json.loads(line))
     
     per_request_meta_trajectory_records = []
-    data_lst = range(args.data_size)
+    data_lst = range(args.data_start, args.data_end)
     # only support batch size ==1 now
     for i in tqdm(data_lst): 
         d = data[i]
@@ -131,7 +135,7 @@ def speed_compare(args):
         ar_generated = model.generate(**inputs, use_cache=True, max_new_tokens=1024, do_sample=False)[0][inputs['input_ids'].shape[-1]:-1]
         ar_end = time.time()
         print(f'ar generated length: {len(ar_generated)}')
-        eos_reached, jacobian_time_speed_lst, jacobian_itr_step_lst, decoded_ids, decoded_result, all_jacobian_trajectory = jacobian_speed_evaluate(processed_prompt, model, tokenizer, max_new_tokens, args.max_new_seq_len)
+        eos_reached, jacobian_time_speed_lst, jacobian_itr_step_lst, decoded_ids, decoded_result, all_jacobian_trajectory = jacobian_speed_evaluate(processed_prompt, model, tokenizer, max_new_tokens, args.max_new_seq_len, args.max_new_tokens_unit, args.num_gist_tokens)
         
         if not detect_repetitive_patterns(tokenizer, decoded_ids, repeat_ngram_size=10):
             per_request_meta_trajectory_records.append(all_jacobian_trajectory)
@@ -294,7 +298,7 @@ def speed_compare(args):
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
-    new_file_path= f'gsm8k_speedup_profiling_results_{args.max_new_tokens}_{args.max_new_seq_len}_{args.data_size}_stats.json'
+    new_file_path= f'gsm8k_speedup_profiling_results_{args.max_new_tokens}_{args.max_new_seq_len}_stats.json'
     fast_forward_and_fix_points_statistics_file = os.path.join(save_path, new_file_path)
 
     with open(fast_forward_and_fix_points_statistics_file, 'w') as f:
@@ -315,13 +319,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", type=str,
                         default="eval/gsm8k/test.jsonl")
-    parser.add_argument("--max_new_tokens", type=int, default=16)
-    parser.add_argument("--max_new_seq_len", type=int, default=1024)
+    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--max_new_tokens_unit", type=int, default=16)
+    parser.add_argument("--num_gist_tokens", type=int, default=1)
+    parser.add_argument("--max_new_seq_len", type=int, default=512)
     parser.add_argument("--test_model_path", type=str,
-                        default="models/vicuna-7b-sharegpt-gpt4-48k")
+                        default="models/Gist_CLLM_Abel_7B_001")
     parser.add_argument("--teacher_model_path", type=str,
-                        default="cllm/consistency-llm-7b-sharegpt48k")
-    parser.add_argument("--data_size", type=str,
-                        default=500)
+                        default="models/Gist_CLLM_Abel_7B_001")
+    parser.add_argument("--data_start", type=str,
+                        default=12)
+    parser.add_argument("--data_end", type=str,
+                        default=20)
     args = parser.parse_args() 
     speed_compare(args)

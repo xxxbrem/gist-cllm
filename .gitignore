@@ -1,5 +1,12 @@
 models
 data/collected_jacobi_trajectory
-gist_cllm/__pycache__
+gist_cllm/__pycache__/
 .vscode
 wandb/
+eval/gsm8k/__pycache__
+data/speedup_profiling_results
+tmp.md
+eval/gsm8k/output.json
+*.png
+data/__pycache__
+out

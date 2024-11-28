@@ -269,12 +269,12 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
     else:
         raise NotImplementedError('Jacobi trajectory collection for dataset: {filename.lower()} is not currently supported.')
         
-    prompt_size = min(len(train_dataset), data_size)
+    prompt_size = min(len(train_dataset), int(data_size))
 
     counter = 0
     new_data = []
 
-    for i in tqdm(range(prompt_size)):
+    for i in tqdm(range(int(args.data_begin), prompt_size)):
         d = train_dataset[i]
         inputs = torch.Tensor(d['sources_input_ids']).unsqueeze(0).to(device=model.device, dtype=torch.int)
 
@@ -296,24 +296,11 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
                 # only support batch size=1 now
                 dic["answer_trajectory_ids"].append(id[0][-max_new_tokens:].tolist())
 
-            # if use_aug:
-            #     for j in range(len(dic["answer_trajectory_ids"])-3, 1, -1):
-            #         correct_positions = torch.where(torch.tensor(dic["answer_trajectory_ids"][j])!= torch.tensor(dic["answer_trajectory_ids"][-1]))[0]
-            #         if correct_positions.shape[0] > 1:
-            #             corrected_size = random.sample(range(1, correct_positions.shape[0]), k=1)
-            #         else:
-            #             continue
-            #         for correct_id in random.choices(correct_positions, k=corrected_size[0]):
-            #             aug_trajectory = dic["answer_trajectory_ids"][j].copy()
-            #             aug_trajectory[correct_id] = dic["answer_trajectory_ids"][-1][correct_id]
-            #         dic["answer_trajectory_ids"].insert(0, aug_trajectory)
             if use_aug:
                 for j in range(len(dic["answer_trajectory_ids"])-3, -1, -1):
-                    correct_positions = torch.where(torch.tensor(dic["answer_trajectory_ids"][j]!=dic["answer_trajectory_ids"][-1]))[0]
-                    for correct_id in random.choices(correct_positions, k=8):
-                        aug_trajectory = dic["answer_trajectory_ids"][j].copy()
-                        aug_trajectory[correct_id] = dic["answer_trajectory_ids"][-1][correct_id]
-                    dic["answer_trajectory_ids"].insert(0, aug_trajectory)
+                    incorrect_positions = torch.where(torch.tensor(dic["answer_trajectory_ids"][j])!=torch.tensor(dic["answer_trajectory_ids"][-1]))[0]
+                    for correct_id in random.choices(incorrect_positions[1:], k=incorrect_positions.shape[0]//2):
+                        dic["answer_trajectory_ids"][j][correct_id] = dic["answer_trajectory_ids"][-1][correct_id]
 
             if use_labels:
                 dic['labels_ids'] = d['labels_ids'].tolist()
@@ -343,15 +330,15 @@ def main(filename, model, tokenizer, max_new_tokens, max_new_seq_len, use_aug, u
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--filename", type=str,
-                        default="/workspace/minghang/Consistency_LLM/data/raw_data/gsm8k_train.jsonl")
-    parser.add_argument("--max_new_tokens", type=int, default=16)
-    parser.add_argument("--max_new_seq_len", type=int, default=512)
+                        default="data/raw_data/gsm8k_train.jsonl")
+    parser.add_argument("--max_new_tokens", type=int, default=64)
+    parser.add_argument("--max_new_seq_len", type=int, default=1024)
     parser.add_argument("--model", type=str,
-                        # default="models/vicuna-7b-v1.5")
-                        default="/workspace/minghang/gist-cllm/models/TinyLlama_v1.1_math_code")
+                        default="models/Abel-7B-001")
+    parser.add_argument("--data_begin", default=0)
     parser.add_argument("--data_size", default=20000)
-    parser.add_argument("--use_aug", default=True)
-    parser.add_argument("--use_labels", default=True)
+    parser.add_argument("--use_aug", action='store_true')
+    parser.add_argument("--use_labels", action='store_true')
     args = parser.parse_args()
     filename = args.filename
     model_path = args.model

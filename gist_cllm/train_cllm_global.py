@@ -32,18 +32,16 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from typing import Dict
 
-from cllm_trainer_global import CllmTrainer
+from gist_cllm.cllm_trainer_global import CllmTrainer
 
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-
-import wandb
 
 import logging
 logger = logging.getLogger(__name__)
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
 
-from gist_llama import GistLlamaForCausalLM
+from gist_cllm.gist_llama_modeling import GistLlamaForCausalLM
 
 @dataclass
 class ModelArguments:
@@ -54,7 +52,7 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     data_path: str = field(
-        default="data/collected_jacobi_trajectory/cleaned_Abel-7B-001_jacobi_max_new_tokens16_augTrue_labels_True_max_seq_len_1024.json", metadata={"help": "Path to the training data."}
+        default=None, metadata={"help": "Path to the training data."}
     )
     lazy_preprocess: bool = False
 
@@ -63,15 +61,21 @@ class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
-        default=512,
+        default=1024,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
     )
     max_new_tokens: int = field(
-        default=16,
+        default=64,
         metadata={
             "help": "Size of n_token_sequence in Jacobi trajectory."
+        },
+    )
+    max_new_tokens_unit: int = field(
+        default=16,
+        metadata={
+            "help": "Size of n_token_sequence_unit in Jacobi trajectory."
         },
     )
     use_gt_labels: bool = False
@@ -84,14 +88,17 @@ class TrainingArguments(transformers.TrainingArguments):
     output_dir: str = field(
         default="out"
     )
-    gist_token: int = None
-    num_gist_token: int = field(
-        default=2
+    num_each_gist_token: int = field(
+        default=1
     )
     attention_mask_gist: torch.tensor = None
     per_device_train_batch_size: int = field(
         default=1
     )
+    gist_token_kinds: int = field(
+        default=0
+    )
+    use_cross_entropy: Optional[bool] = field(default=False)
 
 def rank0_print(local_rank, *args):
     if local_rank == 0:
@@ -111,6 +118,8 @@ def preprocess_distill_data(
     answer_trajectory_ids,
     teacher_output_ids,
     complete_teacher_output_ids,
+    prompt_ids_len,
+    jacobian_itr_ids,
     tokenizer: transformers.PreTrainedTokenizer,
     model: str,
     labels_ids=None,
@@ -122,6 +131,7 @@ def preprocess_distill_data(
     jacobian_prompt_ids = torch.tensor(prompt_ids[0], dtype=torch.int64)
     teacher_output_ids = torch.tensor(teacher_output_ids[0], dtype=torch.int64)
     complete_teacher_output_ids = torch.tensor(complete_teacher_output_ids, dtype=torch.int64)
+    prompt_ids_len = torch.tensor(prompt_ids_len, dtype=torch.int64)
     for answer_ids in answer_trajectory_ids:
         answer_ids = torch.tensor(answer_ids, dtype=torch.int64)
         #print(answer_ids)
@@ -141,14 +151,18 @@ def preprocess_distill_data(
             attention_mask=jacobian_trajectory_ids[0].ne(tokenizer.pad_token_id),
             labels_ids=labels_ids,
             teacher_output_ids=teacher_output_ids,
-            complete_teacher_output_ids=complete_teacher_output_ids
+            complete_teacher_output_ids=complete_teacher_output_ids,
+            prompt_id_len=prompt_ids_len[0],
+            jacobian_itr_id=jacobian_itr_ids
         )
     else:
         return dict(
             jacobian_trajectory=jacobian_trajectory_ids,
             attention_mask=jacobian_trajectory_ids[0].ne(tokenizer.pad_token_id),
             teacher_output_ids=teacher_output_ids,
-            complete_teacher_output_ids=complete_teacher_output_ids
+            complete_teacher_output_ids=complete_teacher_output_ids,
+            prompt_id_len=prompt_ids_len[0],
+            jacobian_itr_id=jacobian_itr_ids
         )
     
 class JacobianDataset(Dataset):
@@ -177,19 +191,23 @@ class JacobianDataset(Dataset):
             return self.cached_data_dict[i]
         if 'labels_ids' in self.raw_data[i].keys():
             ret = preprocess_distill_data(self.raw_data[i]["prompt_ids"],
-                         self.raw_data[i]["answer_trajectory_ids"],
-                         self.raw_data[i]["teacher_output_ids"],
-                         self.raw_data[i]["complete_teacher_output_ids"],
-                         self.tokenizer,
-                         self.model,
-                         labels_ids=self.raw_data[i]["labels_ids"])
+                        self.raw_data[i]["answer_trajectory_ids"],
+                        self.raw_data[i]["teacher_output_ids"],
+                        self.raw_data[i]["complete_teacher_output_ids"],
+                        self.raw_data[i]['prompt_ids_len'],
+                        self.raw_data[i]['jacobian_itr_id'],
+                        self.tokenizer,
+                        self.model,
+                        labels_ids=self.raw_data[i]["labels_ids"])
         else:
             ret = preprocess_distill_data(self.raw_data[i]["prompt_ids"],
-                         self.raw_data[i]["answer_trajectory_ids"],
-                         self.raw_data[i]["teacher_output_ids"],
-                         self.raw_data[i]["complete_teacher_output_ids"],
-                         self.tokenizer,
-                         self.model)
+                        self.raw_data[i]["answer_trajectory_ids"],
+                        self.raw_data[i]["teacher_output_ids"],
+                        self.raw_data[i]["complete_teacher_output_ids"],
+                        self.raw_data[i]['prompt_ids_len'],
+                        self.raw_data[i]['jacobian_itr_id'],
+                        self.tokenizer,
+                        self.model)
         self.cached_data_dict[i] = ret
 
         return ret
@@ -230,9 +248,6 @@ def train():
     local_rank = int(os.environ["LOCAL_RANK"])
     training_args.local_rank = local_rank
     training_args.qlora = model_args.qlora
-
-    if local_rank == 0:
-        wandb.init(os.environ["WANDB_PROJECT"])
     
     torch.set_default_dtype(torch.float)
 
@@ -280,11 +295,8 @@ def train():
         cache_dir=training_args.cache_dir,
         # attn_implementation='flash_attention_2',
         device_map='cuda',
-        torch_dtype=torch.bfloat16,
-        ignore_mismatched_sizes=True
+        torch_dtype=torch.bfloat16
     )
-
-    print(model)
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.target_model_path,
@@ -317,27 +329,19 @@ def train():
 
     # Initialize gist token
     # Warning: the new embedding dimension will be 32001. This might induce some performance reduction as *Tensor Cores* will not be available. 
-    tokenizer.add_special_tokens({"additional_special_tokens": ["<GIST>"]})
+    training_args.gist_token_kinds = training_args.model_max_length // training_args.max_new_tokens_unit - 1
+    tokenizer.add_special_tokens({"additional_special_tokens": [f"<GIST0{i}>" if i < 10 else f"<GIST{i}>" for i in range(training_args.gist_token_kinds)]})
     model.resize_token_embeddings(len(tokenizer))
+
+    embed_tokens = model.base_model.model.model.embed_tokens
+
     # Set new word embedding to average of existing word embeddings. For why,
     # see https://nlp.stanford.edu/~johnhew/vocab-expansion.html
     with torch.no_grad():
-        # distributed GistLlamaForCausalLM --> GistLlamaForCausalLM --> GistLlamaModel
-        model.model.embed_tokens.weight[
-            -1
-        ] = model.model.embed_tokens.weight[:-1].mean(0)
-        model.lm_head.weight[-1] = model.lm_head.weight[:-1].mean(0)
-    training_args.gist_token = tokenizer.additional_special_tokens_ids[-1]
-    
-    # get gist mask
-    max_new_tokens = training_args.max_new_tokens
-    mask_width = max_new_tokens*2 + training_args.num_gist_token
-    attention_mask_gist = torch.zeros([1, 1, mask_width, mask_width], device=model.device)
-    attention_mask_gist[:, :, :max_new_tokens, :max_new_tokens] = 1
-    attention_mask_gist[:, :, -max_new_tokens:, -max_new_tokens:] = 1
-    attention_mask_gist[:, :, max_new_tokens:max_new_tokens+training_args.num_gist_token, :] = 1
-    attention_mask_gist[:, :, :, max_new_tokens:max_new_tokens+training_args.num_gist_token] = 1
-    training_args.attention_mask_gist = attention_mask_gist
+        embed_tokens.weight[
+            -training_args.gist_token_kinds:
+        ] = embed_tokens.weight[:-training_args.gist_token_kinds].mean(0)
+        model.lm_head.weight[-training_args.gist_token_kinds:] = model.lm_head.weight[:-training_args.gist_token_kinds].mean(0)
 
     trainer = CllmTrainer(
         model=model, tokenizer=tokenizer, args=training_args, **data_module
