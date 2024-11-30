@@ -161,6 +161,8 @@ class CllmTrainer(Trainer):
         super().log(logs)
 
     def get_train_dataloader(self):
+        generator = torch.Generator()
+        generator.manual_seed(10)
         # Create custom DataLoader with shuffle set to False
         shuffle = True
         dataloader_params = {
@@ -168,7 +170,7 @@ class CllmTrainer(Trainer):
             "shuffle": shuffle,
             "num_workers": self.args.dataloader_num_workers,
             "pin_memory": self.args.dataloader_pin_memory,
-            # "collate_fn": lambda x: x
+            "generator": generator
         }
 
         return self.accelerator.prepare(DataLoader(self.train_dataset, **dataloader_params))
